@@ -7,8 +7,7 @@ import {
   changePassword,
   changeEmail,
   updateProfile,
-  getProfile,
-  getJoinDate,
+  getMyAccount,
   isAdmin,
   isOwner,
 } from "@/lib/auth";
@@ -69,15 +68,21 @@ export default function SettingsPanel() {
   const [profileNotice, setProfileNotice] = useState("");
   const [joinedAt, setJoinedAt] = useState<number | undefined>(undefined);
 
-  // Load the saved profile once we know who's signed in.
+  // Load the saved profile from the backend once we know who's signed in.
   useEffect(() => {
     if (!user) return;
-    const p = getProfile(user.email);
-    setFullName(p.fullName ?? "");
-    setClassName(p.className ?? "");
-    setSection(p.section ?? "");
-    setPhone(p.phone ?? "");
-    setJoinedAt(getJoinDate(user.email));
+    let active = true;
+    getMyAccount().then((acct) => {
+      if (!active || !acct) return;
+      setFullName(acct.profile.fullName ?? "");
+      setClassName(acct.profile.className ?? "");
+      setSection(acct.profile.section ?? "");
+      setPhone(acct.profile.phone ?? "");
+      setJoinedAt(acct.createdAt);
+    });
+    return () => {
+      active = false;
+    };
   }, [user]);
 
   if (!user) return null;
@@ -88,42 +93,41 @@ export default function SettingsPanel() {
     ? "Admin"
     : "Delegate";
 
-  function handleEmailChange(e: FormEvent) {
+  async function handleEmailChange(e: FormEvent) {
     e.preventDefault();
     setEmailError("");
     setEmailNotice("");
     try {
-      const { oldEmail, user: updated } = changeEmail(
-        user,
+      const { oldEmail, email: updated } = await changeEmail(
         newEmail,
         emailPassword
       );
-      // Keep the delegate's records pointing at their new email.
-      reassignExperienceOwner(oldEmail, updated.email);
-      reassignAuthor(oldEmail, updated.email);
-      reassignDocumentOwner(oldEmail, updated.email);
-      refresh();
+      // Keep this device's local records pointing at the new email.
+      reassignExperienceOwner(oldEmail, updated);
+      reassignAuthor(oldEmail, updated);
+      reassignDocumentOwner(oldEmail, updated);
+      await refresh();
       setNewEmail("");
       setEmailPassword("");
-      setEmailNotice(`Email updated to ${updated.email}.`);
+      setEmailNotice(`Email updated to ${updated}.`);
     } catch (err) {
       setEmailError(err instanceof Error ? err.message : "Something went wrong.");
     }
   }
 
-  function handleProfileSave(e: FormEvent) {
+  async function handleProfileSave(e: FormEvent) {
     e.preventDefault();
     setProfileError("");
     setProfileNotice("");
     try {
-      updateProfile(user, { fullName, className, section, phone });
+      await updateProfile({ fullName, className, section, phone });
       setProfileNotice("Profile saved.");
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : "Something went wrong.");
     }
   }
 
-  function handlePasswordChange(e: FormEvent) {
+  async function handlePasswordChange(e: FormEvent) {
     e.preventDefault();
     setPwError("");
     setPwNotice("");
@@ -132,7 +136,7 @@ export default function SettingsPanel() {
       return;
     }
     try {
-      changePassword(user, currentPw, newPw);
+      await changePassword(currentPw, newPw);
       setCurrentPw("");
       setNewPw("");
       setConfirmPw("");
@@ -362,8 +366,8 @@ export default function SettingsPanel() {
           <p className="text-sm text-navy-500">End your session on this device.</p>
         </div>
         <button
-          onClick={() => {
-            signOut();
+          onClick={async () => {
+            await signOut();
             router.push("/");
           }}
           className="btn-ghost"

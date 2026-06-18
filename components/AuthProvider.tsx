@@ -17,12 +17,12 @@ import {
 
 interface AuthContextValue {
   user: User | null;
-  /** True until the persisted session has been read on the client. */
+  /** True until the session has been read from the server on first load. */
   loading: boolean;
-  signIn: (email: string, password: string) => User;
-  signOut: () => void;
-  /** Re-read the validated session (after a settings change, etc.). */
-  refresh: () => void;
+  signIn: (email: string, password: string) => Promise<User>;
+  signOut: () => Promise<void>;
+  /** Re-read the session from the server (after a settings change, etc.). */
+  refresh: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -31,28 +31,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Restore the session once we're on the client (localStorage isn't available
-  // during server rendering). We re-validate against the account store so a
-  // role that changed since sign-in — or a stale session from an older build —
-  // is corrected rather than trusted.
+  // Restore the session from the backend (httpOnly cookie) on first load.
   useEffect(() => {
-    setUser(getValidatedSession());
-    setLoading(false);
+    let active = true;
+    getValidatedSession()
+      .then((u) => {
+        if (active) setUser(u);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const signIn = useCallback((email: string, password: string) => {
-    const next = authSignIn(email, password);
+  const signIn = useCallback(async (email: string, password: string) => {
+    const next = await authSignIn(email, password);
     setUser(next);
     return next;
   }, []);
 
-  const signOut = useCallback(() => {
-    authSignOut();
+  const signOut = useCallback(async () => {
+    await authSignOut();
     setUser(null);
   }, []);
 
-  const refresh = useCallback(() => {
-    setUser(getValidatedSession());
+  const refresh = useCallback(async () => {
+    setUser(await getValidatedSession());
   }, []);
 
   return (

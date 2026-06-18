@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { getVisibleAccounts, type AccountDetail } from "@/lib/auth";
+import { getAccounts, type AccountDetail } from "@/lib/auth";
 import { getAllExperiences, type MunExperience } from "@/lib/experience";
-import { useAuth } from "./AuthProvider";
 import { getPointsMap, scoreForExperiences } from "@/lib/ranking";
 import { SparkleIcon } from "./icons";
 
@@ -84,7 +83,6 @@ function summarize(
 }
 
 export default function ProfileBot() {
-  const { user } = useAuth();
   const [accounts, setAccounts] = useState<AccountDetail[]>([]);
   const [experiences, setExperiences] = useState<MunExperience[]>([]);
   const [messages, setMessages] = useState<Message[]>([{ from: "bot", text: GREETING }]);
@@ -92,10 +90,11 @@ export default function ProfileBot() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setAccounts(getVisibleAccounts(user));
+    getAccounts()
+      .then(setAccounts)
+      .catch(() => setAccounts([]));
     setExperiences(getAllExperiences());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });

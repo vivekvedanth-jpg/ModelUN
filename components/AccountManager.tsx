@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "./AuthProvider";
 import {
-  getVisibleAccounts,
+  getAccounts,
   createAccount,
   setRole,
   setGroup,
@@ -15,7 +15,7 @@ import {
   type Role,
   type AccountDetail,
 } from "@/lib/auth";
-import { getGroups, groupName, type Group } from "@/lib/groups";
+import { getGroups, type Group } from "@/lib/groups";
 import {
   getAllExperiences,
   deleteExperience,
@@ -77,10 +77,15 @@ export default function AccountManager() {
   const canAssignGroups = canViewAllGroups(user);
   const myGroupId = getActorGroupId(user);
 
-  const refresh = () => {
-    setUsers(getVisibleAccounts(user));
+  const refresh = async () => {
+    try {
+      const [accts, grps] = await Promise.all([getAccounts(), getGroups()]);
+      setUsers(accts);
+      setGroups(grps);
+    } catch {
+      /* ignore — likely not signed in / DB not configured */
+    }
     setExperiences(getAllExperiences());
-    setGroups(getGroups());
   };
 
   useEffect(() => {
@@ -110,13 +115,13 @@ export default function AccountManager() {
     }
   }
 
-  function run(action: () => void, success: string) {
+  async function run(action: () => Promise<void>, success: string) {
     setError("");
     setNotice("");
     try {
-      action();
+      await action();
       setNotice(success);
-      refresh();
+      await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     }
@@ -125,13 +130,14 @@ export default function AccountManager() {
   function handleCreate(e: FormEvent) {
     e.preventDefault();
     const groupArg = newRole === "chair" ? undefined : newGroup || undefined;
-    run(() => {
-      createAccount(user, newEmail, newPassword, newRole, groupArg);
+    const created = newEmail.trim().toLowerCase();
+    run(async () => {
+      await createAccount(newEmail, newPassword, newRole, groupArg);
       setNewEmail("");
       setNewPassword("");
       setNewRole("normal");
       setNewGroup("");
-    }, `Account "${newEmail.trim().toLowerCase()}" created.`);
+    }, `Account "${created}" created.`);
   }
 
   return (
@@ -276,9 +282,7 @@ export default function AccountManager() {
               ) : (
                 <p className="text-sm text-navy-600">
                   New delegates join your group:{" "}
-                  <span className="font-semibold">
-                    {groupName(myGroupId) || "—"}
-                  </span>
+                  <span className="font-semibold">{groupLabel(myGroupId)}</span>
                 </p>
               )}
             </div>
@@ -408,7 +412,7 @@ export default function AccountManager() {
                                 | "chair"
                                 | "normal";
                               run(
-                                () => setRole(user, u.email, next),
+                                () => setRole(u.email, next),
                                 `${u.email} is now ${roleLabel(next)}.`
                               );
                             }}
@@ -429,7 +433,6 @@ export default function AccountManager() {
                                 run(
                                   () =>
                                     setGroup(
-                                      user,
                                       u.email,
                                       e.target.value || undefined
                                     ),
@@ -459,7 +462,7 @@ export default function AccountManager() {
                                 )
                               ) {
                                 run(
-                                  () => deleteAccount(user, u.email),
+                                  () => deleteAccount(u.email),
                                   `Account "${u.email}" deleted.`
                                 );
                               }

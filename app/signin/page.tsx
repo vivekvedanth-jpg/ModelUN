@@ -16,12 +16,12 @@ export default function SignInPage() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
     setSubmitting(true);
     try {
-      const user = signIn(email, password);
+      const user = await signIn(email, password);
       router.push(isAdmin(user.role) ? "/admin" : "/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");

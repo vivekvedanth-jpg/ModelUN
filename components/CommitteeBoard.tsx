@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "./AuthProvider";
-import { getAccounts, isOwner, type AccountDetail } from "@/lib/auth";
+import { isOwner } from "@/lib/auth";
 import {
   getCommitteesForUser,
   createCommittee,
@@ -46,7 +46,6 @@ export default function CommitteeBoard() {
 
   const [committees, setCommittees] = useState<Committee[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [accounts, setAccounts] = useState<AccountDetail[]>([]);
   const [error, setError] = useState("");
 
   // Add-delegate form.
@@ -67,7 +66,6 @@ export default function CommitteeBoard() {
     setActiveId((cur) =>
       cur && list.some((c) => c.id === cur) ? cur : list[0]?.id ?? null
     );
-    setAccounts(getAccounts());
   }, [user]);
 
   /** Runs an in-committee mutation and folds the updated committee back in. */
@@ -128,20 +126,6 @@ export default function CommitteeBoard() {
     edit(() => addSpeaker(user, active.id, speakerName));
     setSpeakerName("");
   }
-
-  // Suggest registered delegates in the add-delegate field (select or type).
-  // De-duplicated so the datalist never emits two options with the same value.
-  const delegateSuggestions = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          accounts
-            .filter((a) => a.role === "normal")
-            .map((a) => a.profile.fullName?.trim() || a.email.split("@")[0])
-        )
-      ),
-    [accounts]
-  );
 
   // Speaker suggestions come from this committee's own roster (names + countries).
   const speakerSuggestions = useMemo(() => {
@@ -644,17 +628,11 @@ export default function CommitteeBoard() {
                 </label>
                 <input
                   id="committee-del-name"
-                  list="committee-delegate-options"
                   value={delName}
                   onChange={(e) => setDelName(e.target.value)}
-                  placeholder="Select or type a name"
+                  placeholder="Delegate name"
                   className="input-field !py-2.5"
                 />
-                <datalist id="committee-delegate-options">
-                  {delegateSuggestions.map((n) => (
-                    <option key={n} value={n} />
-                  ))}
-                </datalist>
               </div>
               <div className="min-w-[160px] flex-1">
                 <label htmlFor="committee-del-portfolio" className="label">

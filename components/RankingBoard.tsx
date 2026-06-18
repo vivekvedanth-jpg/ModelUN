@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getVisibleAccounts, type AccountDetail } from "@/lib/auth";
-import { useAuth } from "./AuthProvider";
+import { getAccounts, type AccountDetail } from "@/lib/auth";
 import { getAllExperiences, PLACEMENTS, type MunExperience } from "@/lib/experience";
 import {
   getPointsMap,
@@ -20,7 +19,6 @@ function medal(rank: number): string {
 }
 
 export default function RankingBoard() {
-  const { user } = useAuth();
   const [accounts, setAccounts] = useState<AccountDetail[]>([]);
   const [experiences, setExperiences] = useState<MunExperience[]>([]);
   const [points, setPoints] = useState<Record<string, number>>({});
@@ -28,12 +26,13 @@ export default function RankingBoard() {
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
-    setAccounts(getVisibleAccounts(user));
+    getAccounts()
+      .then(setAccounts)
+      .catch(() => setAccounts([]));
     setExperiences(getAllExperiences());
     setPoints(getPointsMap());
     setOrder(getManualOrder());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, []);
 
   const leaderboard = useMemo(
     () => computeLeaderboard(accounts, experiences, points, order),

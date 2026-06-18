@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useAuth } from "./AuthProvider";
-import { getVisibleAccounts, isOwner, type AccountDetail } from "@/lib/auth";
+import { getAccounts, isOwner, type AccountDetail } from "@/lib/auth";
 import { getResources, getVideos } from "@/lib/content";
 import PageHeader from "./PageHeader";
 import UploadCard from "./UploadCard";
@@ -26,13 +26,20 @@ export default function AdminDashboard() {
   const [videoCount, setVideoCount] = useState(0);
   const [resourceCount, setResourceCount] = useState(0);
 
-  // Read accounts + content counts from localStorage on the client.
+  // Account list comes from the backend; content counts are still local.
   useEffect(() => {
-    setUsers(getVisibleAccounts(user));
+    let active = true;
+    getAccounts()
+      .then((a) => {
+        if (active) setUsers(a);
+      })
+      .catch(() => {});
     setVideoCount(getVideos().length);
     setResourceCount(getResources().length);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const stats = [
     {

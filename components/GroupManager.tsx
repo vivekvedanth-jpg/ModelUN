@@ -1,14 +1,8 @@
 "use client";
 
 import { Fragment, useEffect, useState, type FormEvent } from "react";
-import { useAuth } from "./AuthProvider";
 import { getGroups, createGroup, deleteGroup, type Group } from "@/lib/groups";
-import {
-  getAccountsInGroup,
-  getAllAccessAdmins,
-  clearGroup,
-  type AccountDetail,
-} from "@/lib/auth";
+import { getAccounts, ALL_GROUPS, type AccountDetail } from "@/lib/auth";
 import {
   UsersIcon,
   PlusIcon,
@@ -22,31 +16,34 @@ function displayName(a: AccountDetail): string {
 }
 
 export default function GroupManager() {
-  const { user } = useAuth();
-
   const [groups, setGroups] = useState<Group[]>([]);
-  const [allAdmins, setAllAdmins] = useState<AccountDetail[]>([]);
+  const [accounts, setAccounts] = useState<AccountDetail[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  const refresh = () => {
-    setGroups(getGroups());
-    setAllAdmins(getAllAccessAdmins());
+  const refresh = async () => {
+    try {
+      const [grps, accts] = await Promise.all([getGroups(), getAccounts()]);
+      setGroups(grps);
+      setAccounts(accts);
+    } catch {
+      /* ignore */
+    }
   };
 
   useEffect(() => {
     refresh();
   }, []);
 
-  function run(action: () => void, success: string) {
+  async function run(action: () => Promise<void>, success: string) {
     setError("");
     setNotice("");
     try {
-      action();
+      await action();
       setNotice(success);
-      refresh();
+      await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     }
@@ -54,10 +51,11 @@ export default function GroupManager() {
 
   function handleCreate(e: FormEvent) {
     e.preventDefault();
-    run(() => {
-      createGroup(user, newName);
+    const name = newName.trim();
+    run(async () => {
+      await createGroup(newName);
       setNewName("");
-    }, `Group "${newName.trim()}" created.`);
+    }, `Group "${name}" created.`);
   }
 
   function handleDelete(g: Group) {
@@ -67,11 +65,12 @@ export default function GroupManager() {
       )
     )
       return;
-    run(() => {
-      deleteGroup(user, g.id);
-      clearGroup(g.id);
-    }, `Group "${g.name}" deleted.`);
+    run(() => deleteGroup(g.id), `Group "${g.name}" deleted.`);
   }
+
+  const allAccessAdmins = accounts.filter(
+    (a) => a.role === "admin" && a.groupId === ALL_GROUPS
+  );
 
   function MemberRow({ a }: { a: AccountDetail }) {
     return (
@@ -152,7 +151,7 @@ export default function GroupManager() {
         ) : (
           <div className="mt-6 space-y-3">
             {groups.map((g) => {
-              const members = getAccountsInGroup(g.id);
+              const members = accounts.filter((a) => a.groupId === g.id);
               const admins = members.filter((a) => a.role === "admin");
               const students = members.filter((a) => a.role === "normal");
               const isOpen = expandedId === g.id;
@@ -240,14 +239,14 @@ export default function GroupManager() {
           These admins can see every group&apos;s members.
         </p>
         <div className="mt-4">
-          {allAdmins.length === 0 ? (
+          {allAccessAdmins.length === 0 ? (
             <p className="text-sm text-navy-500">
               None yet — create an admin with the all groups option in Delegate
               Affairs.
             </p>
           ) : (
             <div className="grid gap-2 sm:grid-cols-2">
-              {allAdmins.map((a) => (
+              {allAccessAdmins.map((a) => (
                 <div
                   key={a.email}
                   className="flex items-center gap-3 rounded-xl border border-navy-100 bg-white px-4 py-2.5"
