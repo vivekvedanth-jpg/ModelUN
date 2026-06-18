@@ -1,0 +1,566 @@
+"use client";
+
+import { Fragment, useEffect, useState, type FormEvent } from "react";
+import { useAuth } from "./AuthProvider";
+import {
+  getVisibleAccounts,
+  createAccount,
+  setRole,
+  setGroup,
+  deleteAccount,
+  isOwner,
+  canViewAllGroups,
+  getActorGroupId,
+  ALL_GROUPS,
+  type Role,
+  type AccountDetail,
+} from "@/lib/auth";
+import { getGroups, groupName, type Group } from "@/lib/groups";
+import {
+  getAllExperiences,
+  deleteExperience,
+  type MunExperience,
+} from "@/lib/experience";
+import {
+  UsersIcon,
+  PlusIcon,
+  TrashIcon,
+  CrownIcon,
+  ShieldIcon,
+  ScaleIcon,
+  AwardIcon,
+  CalendarIcon,
+} from "./icons";
+
+function roleBadgeClass(role: Role) {
+  switch (role) {
+    case "owner":
+      return "bg-gold-500 text-navy-900";
+    case "admin":
+      return "bg-gold-100 text-gold-700";
+    case "chair":
+      return "bg-emerald-100 text-emerald-700";
+    default:
+      return "bg-navy-100 text-navy-700";
+  }
+}
+
+function roleLabel(role: Role): string {
+  return role === "owner"
+    ? "Owner"
+    : role === "admin"
+    ? "Admin"
+    : role === "chair"
+    ? "Chair"
+    : "Delegate";
+}
+
+export default function AccountManager() {
+  const { user } = useAuth();
+  const owner = isOwner(user);
+
+  const [users, setUsers] = useState<AccountDetail[]>([]);
+  const [experiences, setExperiences] = useState<MunExperience[]>([]);
+  const [expandedEmail, setExpandedEmail] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  // New-account form state.
+  const [newEmail, setNewEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  // Only the owner can create admins/chairs, so default to "normal" for everyone.
+  const [newRole, setNewRole] = useState<"admin" | "chair" | "normal">("normal");
+  const [newGroup, setNewGroup] = useState("");
+  const [groups, setGroups] = useState<Group[]>([]);
+
+  // The owner + all-access admins choose groups; group-scoped admins cannot.
+  const canAssignGroups = canViewAllGroups(user);
+  const myGroupId = getActorGroupId(user);
+
+  const refresh = () => {
+    setUsers(getVisibleAccounts(user));
+    setExperiences(getAllExperiences());
+    setGroups(getGroups());
+  };
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  function experiencesFor(email: string): MunExperience[] {
+    const lower = email.toLowerCase();
+    return experiences.filter((e) => e.owner.toLowerCase() === lower);
+  }
+
+  function groupLabel(groupId?: string): string {
+    if (groupId === ALL_GROUPS) return "All groups";
+    if (!groupId) return "No group";
+    return groups.find((g) => g.id === groupId)?.name ?? "No group";
+  }
+
+  function removeExperience(id: string) {
+    setError("");
+    setNotice("");
+    try {
+      deleteExperience(user, id);
+      setExperiences(getAllExperiences());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    }
+  }
+
+  function run(action: () => void, success: string) {
+    setError("");
+    setNotice("");
+    try {
+      action();
+      setNotice(success);
+      refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    }
+  }
+
+  function handleCreate(e: FormEvent) {
+    e.preventDefault();
+    const groupArg = newRole === "chair" ? undefined : newGroup || undefined;
+    run(() => {
+      createAccount(user, newEmail, newPassword, newRole, groupArg);
+      setNewEmail("");
+      setNewPassword("");
+      setNewRole("normal");
+      setNewGroup("");
+    }, `Account "${newEmail.trim().toLowerCase()}" created.`);
+  }
+
+  return (
+    <div className="space-y-8">
+      {/* Create account */}
+      <div id="create-account" className="scroll-mt-24">
+        <h2 className="text-2xl font-bold text-navy-900">Create an account</h2>
+        <p className="mt-1 text-navy-600">
+          There is no public sign-up — new delegates can only be added here.
+          {owner
+            ? " As the Owner you can also create admin and chair accounts."
+            : " Only the Owner can create admin and chair accounts."}
+        </p>
+
+        <form
+          onSubmit={handleCreate}
+          className="mt-6 rounded-2xl border-2 border-dashed border-gold-300 bg-gold-50/60 p-6"
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="new-email" className="label">
+                Email
+              </label>
+              <input
+                id="new-email"
+                type="email"
+                autoComplete="off"
+                className="input-field"
+                placeholder="e.g. delegate@school.edu"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="new-password" className="label">
+                Temporary password
+              </label>
+              <input
+                id="new-password"
+                type="text"
+                className="input-field"
+                placeholder="At least 4 characters"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+              />
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <span className="label">Account type</span>
+            <div className="mt-1 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setNewRole("normal");
+                  setNewGroup("");
+                }}
+                className={`badge px-3 py-1.5 ${
+                  newRole === "normal"
+                    ? "bg-navy-800 text-white"
+                    : "bg-navy-100 text-navy-700"
+                }`}
+              >
+                Delegate (normal)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setNewRole("chair");
+                  setNewGroup("");
+                }}
+                disabled={!owner}
+                title={owner ? "" : "Only the Owner can create chairs"}
+                className={`badge px-3 py-1.5 ${
+                  newRole === "chair"
+                    ? "bg-emerald-500 text-white"
+                    : "bg-navy-100 text-navy-700"
+                } ${!owner ? "cursor-not-allowed opacity-50" : ""}`}
+              >
+                <ScaleIcon width={14} height={14} /> Chair
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setNewRole("admin");
+                  setNewGroup(ALL_GROUPS);
+                }}
+                disabled={!owner}
+                title={owner ? "" : "Only the Owner can create admins"}
+                className={`badge px-3 py-1.5 ${
+                  newRole === "admin"
+                    ? "bg-gold-500 text-navy-900"
+                    : "bg-navy-100 text-navy-700"
+                } ${!owner ? "cursor-not-allowed opacity-50" : ""}`}
+              >
+                <ShieldIcon width={14} height={14} /> Admin
+              </button>
+            </div>
+            {owner && (
+              <p className="mt-2 text-xs text-navy-500">
+                Chairs get a private Committee Scoring page to grade the delegates
+                in their committee.
+              </p>
+            )}
+          </div>
+
+          {/* Group assignment */}
+          {newRole !== "chair" && (
+            <div className="mt-4">
+              <span className="label">Group</span>
+              {canAssignGroups ? (
+                <>
+                  <select
+                    value={newGroup}
+                    onChange={(e) => setNewGroup(e.target.value)}
+                    className="input-field"
+                  >
+                    {newRole === "admin" && (
+                      <option value={ALL_GROUPS}>All groups (full access)</option>
+                    )}
+                    {newRole === "normal" && <option value="">No group</option>}
+                    {groups.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </select>
+                  {newRole === "admin" && (
+                    <p className="mt-1.5 text-xs text-navy-500">
+                      Pick a group to limit this admin to its members, or all
+                      groups for full access.
+                    </p>
+                  )}
+                  {groups.length === 0 && (
+                    <p className="mt-1.5 text-xs text-navy-500">
+                      No groups yet — create one on the Groups page first.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-navy-600">
+                  New delegates join your group:{" "}
+                  <span className="font-semibold">
+                    {groupName(myGroupId) || "—"}
+                  </span>
+                </p>
+              )}
+            </div>
+          )}
+
+          <button type="submit" className="btn-gold mt-5">
+            <PlusIcon width={16} height={16} /> Create account
+          </button>
+        </form>
+      </div>
+
+      {error && (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p className="rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-sm text-green-700">
+          {notice}
+        </p>
+      )}
+
+      {/* All accounts */}
+      <div>
+        <h2 className="text-2xl font-bold text-navy-900">
+          {canAssignGroups ? "All accounts" : "Your group"}
+        </h2>
+        <p className="mt-1 text-navy-600">
+          {canAssignGroups
+            ? "Every account on the platform. "
+            : "Accounts in your group. "}
+          {owner
+            ? "You can change roles, groups, and remove accounts."
+            : "You can remove delegate accounts; only the Owner manages admins and groups."}
+        </p>
+
+        <div className="mt-6 overflow-hidden rounded-2xl border border-navy-100 bg-white">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-navy-50 text-xs uppercase tracking-wide text-navy-500">
+              <tr>
+                <th className="px-5 py-3 font-semibold">Account</th>
+                <th className="px-5 py-3 font-semibold">Role</th>
+                <th className="px-5 py-3 text-right font-semibold">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-navy-100">
+              {users.map((u) => {
+                const isSelf =
+                  u.email.toLowerCase() === user?.email.toLowerCase();
+                const targetIsOwner = u.role === "owner";
+                // Who can delete this row?
+                const canDelete =
+                  !targetIsOwner &&
+                  !isSelf &&
+                  (owner || u.role === "normal");
+                const exps = experiencesFor(u.email);
+                const isExpanded = expandedEmail === u.email;
+                const fullName = u.profile.fullName?.trim();
+                const display = fullName || u.email.split("@")[0];
+
+                return (
+                  <Fragment key={u.email}>
+                  <tr className="hover:bg-navy-50/50">
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                            u.role === "normal"
+                              ? "bg-navy-800 text-white"
+                              : "bg-gold-500 text-navy-900"
+                          }`}
+                        >
+                          {display.slice(0, 1).toUpperCase()}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="font-semibold text-navy-900">
+                            {display}
+                            {isSelf && (
+                              <span className="ml-2 text-xs font-normal text-navy-400">
+                                (you)
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-navy-500">{u.email}</div>
+                          {u.role !== "owner" && (
+                            <span className="badge mt-1 bg-navy-50 text-navy-600">
+                              {groupLabel(u.groupId)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3">
+                      <span
+                        className={`badge inline-flex items-center gap-1 ${roleBadgeClass(
+                          u.role
+                        )}`}
+                      >
+                        {u.role === "owner" && (
+                          <CrownIcon width={13} height={13} />
+                        )}
+                        {roleLabel(u.role)}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3">
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        {/* View this delegate's MUN experience */}
+                        <button
+                          onClick={() =>
+                            setExpandedEmail(isExpanded ? null : u.email)
+                          }
+                          className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${
+                            isExpanded
+                              ? "border-navy-800 bg-navy-800 text-white"
+                              : "border-navy-200 text-navy-700 hover:bg-navy-50"
+                          }`}
+                        >
+                          <AwardIcon width={14} height={14} /> MUNs ({exps.length})
+                        </button>
+                        {/* Change role — Owner only, never on the Owner */}
+                        {owner && !targetIsOwner && (
+                          <select
+                            value={u.role}
+                            onChange={(e) => {
+                              const next = e.target.value as
+                                | "admin"
+                                | "chair"
+                                | "normal";
+                              run(
+                                () => setRole(user, u.email, next),
+                                `${u.email} is now ${roleLabel(next)}.`
+                              );
+                            }}
+                            aria-label={`Change role for ${u.email}`}
+                            className="rounded-lg border border-navy-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-navy-700 focus:border-navy-500 focus:outline-none"
+                          >
+                            <option value="normal">Delegate</option>
+                            <option value="chair">Chair</option>
+                            <option value="admin">Admin</option>
+                          </select>
+                        )}
+                        {/* Assign a group — Owner only, for admins & delegates */}
+                        {owner &&
+                          (u.role === "admin" || u.role === "normal") && (
+                            <select
+                              value={u.groupId ?? ""}
+                              onChange={(e) =>
+                                run(
+                                  () =>
+                                    setGroup(
+                                      user,
+                                      u.email,
+                                      e.target.value || undefined
+                                    ),
+                                  `Group updated for ${u.email}.`
+                                )
+                              }
+                              aria-label={`Change group for ${u.email}`}
+                              className="rounded-lg border border-navy-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-navy-700 focus:border-navy-500 focus:outline-none"
+                            >
+                              <option value="">No group</option>
+                              {u.role === "admin" && (
+                                <option value={ALL_GROUPS}>All groups</option>
+                              )}
+                              {groups.map((g) => (
+                                <option key={g.id} value={g.id}>
+                                  {g.name}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        {canDelete && (
+                          <button
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  `Delete the account "${u.email}"? This cannot be undone.`
+                                )
+                              ) {
+                                run(
+                                  () => deleteAccount(user, u.email),
+                                  `Account "${u.email}" deleted.`
+                                );
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+                          >
+                            <TrashIcon width={14} height={14} /> Delete
+                          </button>
+                        )}
+                        {targetIsOwner && (
+                          <span className="inline-flex items-center gap-1 text-xs text-navy-400">
+                            <UsersIcon width={14} height={14} /> Permanent
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+
+                  {isExpanded && (
+                    <tr className="bg-navy-50/40">
+                      <td colSpan={3} className="px-5 py-4">
+                        {/* Profile details */}
+                        <div className="mb-4 flex flex-wrap gap-2 text-xs">
+                          {fullName && (
+                            <span className="badge bg-white text-navy-700">
+                              Name: {fullName}
+                            </span>
+                          )}
+                          {u.profile.className && (
+                            <span className="badge bg-white text-navy-700">
+                              Class {u.profile.className}
+                              {u.profile.section ? ` · Sec ${u.profile.section}` : ""}
+                            </span>
+                          )}
+                          {u.profile.phone && (
+                            <span className="badge bg-white text-navy-700">
+                              📞 {u.profile.phone}
+                            </span>
+                          )}
+                          {!fullName && !u.profile.className && !u.profile.phone && (
+                            <span className="text-navy-400">
+                              No profile details added yet.
+                            </span>
+                          )}
+                        </div>
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-navy-500">
+                          MUN experience — {u.email}
+                        </p>
+                        {exps.length === 0 ? (
+                          <p className="text-sm text-navy-500">
+                            This delegate hasn&apos;t logged any conferences yet.
+                          </p>
+                        ) : (
+                          <div className="space-y-2">
+                            {exps.map((it) => (
+                              <div
+                                key={it.id}
+                                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-navy-100 bg-white px-4 py-2.5 text-sm"
+                              >
+                                <span className="font-semibold text-navy-900">
+                                  {it.conference}
+                                </span>
+                                <span className="inline-flex items-center gap-1 text-navy-500">
+                                  <CalendarIcon width={13} height={13} /> {it.date}
+                                </span>
+                                <span className="text-navy-500">· {it.committee}</span>
+                                <span className="text-navy-500">· {it.portfolio}</span>
+                                <span className="badge ml-auto inline-flex items-center gap-1 bg-gold-100 text-gold-700">
+                                  <AwardIcon width={12} height={12} /> {it.placement}
+                                </span>
+                                {it.scorecardDataUrl && (
+                                  <a
+                                    href={it.scorecardDataUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    download={it.scorecardName}
+                                    className="text-xs font-semibold text-navy-700 underline hover:text-gold-600"
+                                  >
+                                    Scorecard
+                                  </a>
+                                )}
+                                <button
+                                  onClick={() => removeExperience(it.id)}
+                                  className="text-xs font-semibold text-red-600 hover:text-red-700"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
