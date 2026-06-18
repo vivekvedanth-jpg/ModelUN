@@ -79,13 +79,15 @@ export default function AccountManager() {
 
   const refresh = async () => {
     try {
-      const [accts, grps] = await Promise.all([getAccounts(), getGroups()]);
+      const [accts, grps, exps] = await Promise.all([
+        getAccounts(), getGroups(), getAllExperiences(),
+      ]);
       setUsers(accts);
       setGroups(grps);
+      setExperiences(exps);
     } catch {
       /* ignore — likely not signed in / DB not configured */
     }
-    setExperiences(getAllExperiences());
   };
 
   useEffect(() => {
@@ -104,12 +106,12 @@ export default function AccountManager() {
     return groups.find((g) => g.id === groupId)?.name ?? "No group";
   }
 
-  function removeExperience(id: string) {
+  async function removeExperience(id: string) {
     setError("");
     setNotice("");
     try {
-      deleteExperience(user, id);
-      setExperiences(getAllExperiences());
+      await deleteExperience(id);
+      setExperiences((prev) => prev.filter((e) => e.id !== id));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     }

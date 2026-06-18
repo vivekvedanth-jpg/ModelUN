@@ -26,19 +26,19 @@ export default function AdminDashboard() {
   const [videoCount, setVideoCount] = useState(0);
   const [resourceCount, setResourceCount] = useState(0);
 
-  // Account list comes from the backend; content counts are still local.
   useEffect(() => {
     let active = true;
-    getAccounts()
-      .then((a) => {
-        if (active) setUsers(a);
-      })
-      .catch(() => {});
-    setVideoCount(getVideos().length);
-    setResourceCount(getResources().length);
-    return () => {
-      active = false;
-    };
+    Promise.all([
+      getAccounts().catch(() => [] as AccountDetail[]),
+      getVideos().catch(() => []),
+      getResources().catch(() => []),
+    ]).then(([accts, vids, res]) => {
+      if (!active) return;
+      setUsers(accts);
+      setVideoCount(vids.length);
+      setResourceCount(res.length);
+    });
+    return () => { active = false; };
   }, []);
 
   const stats = [
@@ -84,18 +84,14 @@ export default function AdminDashboard() {
           ))}
         </div>
 
-        {/* Content management / upload controls */}
+        {/* Content management */}
         <div id="upload" className="scroll-mt-24">
           <h2 className="text-2xl font-bold text-navy-900">Content management</h2>
           <p className="mt-1 text-navy-600">
             Publish new videos and resources, or remove existing ones from the{" "}
-            <a href="/videos" className="font-semibold underline">
-              Videos
-            </a>{" "}
+            <a href="/videos" className="font-semibold underline">Videos</a>{" "}
             and{" "}
-            <a href="/resources" className="font-semibold underline">
-              Resources
-            </a>{" "}
+            <a href="/resources" className="font-semibold underline">Resources</a>{" "}
             pages.
           </p>
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
@@ -105,6 +101,7 @@ export default function AdminDashboard() {
               description="Add a lesson to the Videos library."
               accept="video/*"
               cta="Publish video"
+              onAdded={() => getVideos().then((v) => setVideoCount(v.length)).catch(() => {})}
             />
             <UploadCard
               kind="resource"
@@ -112,6 +109,7 @@ export default function AdminDashboard() {
               description="Add a guide or template to Resources."
               accept=".pdf,.doc,.docx"
               cta="Publish resource"
+              onAdded={() => getResources().then((r) => setResourceCount(r.length)).catch(() => {})}
             />
           </div>
         </div>
@@ -131,11 +129,7 @@ export default function AdminDashboard() {
               </span>
               <h3 className="mt-5 flex items-center gap-1.5 text-lg font-bold text-navy-900">
                 Delegate Affairs
-                <ArrowRightIcon
-                  width={16}
-                  height={16}
-                  className="opacity-0 transition-opacity group-hover:opacity-100"
-                />
+                <ArrowRightIcon width={16} height={16} className="opacity-0 transition-opacity group-hover:opacity-100" />
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-navy-600">
                 Create accounts, {owner ? "promote/demote, " : ""}review each
@@ -149,18 +143,13 @@ export default function AdminDashboard() {
               </span>
               <h3 className="mt-5 flex items-center gap-1.5 text-lg font-bold text-navy-900">
                 Delegate Rankings
-                <ArrowRightIcon
-                  width={16}
-                  height={16}
-                  className="opacity-0 transition-opacity group-hover:opacity-100"
-                />
+                <ArrowRightIcon width={16} height={16} className="opacity-0 transition-opacity group-hover:opacity-100" />
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-navy-600">
                 Score awards, view the leaderboard, and arrange the rankings.
               </p>
             </Link>
 
-            {/* Groups — Owner organizes clubs/schools and scopes admins. */}
             {owner && (
               <Link href="/admin/groups" className="card-hover group">
                 <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-navy-800 text-gold-400">
@@ -168,11 +157,7 @@ export default function AdminDashboard() {
                 </span>
                 <h3 className="mt-5 flex items-center gap-1.5 text-lg font-bold text-navy-900">
                   Groups
-                  <ArrowRightIcon
-                    width={16}
-                    height={16}
-                    className="opacity-0 transition-opacity group-hover:opacity-100"
-                  />
+                  <ArrowRightIcon width={16} height={16} className="opacity-0 transition-opacity group-hover:opacity-100" />
                 </h3>
                 <p className="mt-2 text-sm leading-relaxed text-navy-600">
                   Create clubs or schools, assign admins to a group, and see each
@@ -181,7 +166,6 @@ export default function AdminDashboard() {
               </Link>
             )}
 
-            {/* Committee scoring — Owner oversight of all chairs' committees. */}
             {owner && (
               <Link href="/committee" className="card-hover group">
                 <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-600">
@@ -189,11 +173,7 @@ export default function AdminDashboard() {
                 </span>
                 <h3 className="mt-5 flex items-center gap-1.5 text-lg font-bold text-navy-900">
                   Committee Scoring
-                  <ArrowRightIcon
-                    width={16}
-                    height={16}
-                    className="opacity-0 transition-opacity group-hover:opacity-100"
-                  />
+                  <ArrowRightIcon width={16} height={16} className="opacity-0 transition-opacity group-hover:opacity-100" />
                 </h3>
                 <p className="mt-2 text-sm leading-relaxed text-navy-600">
                   Oversee every chair&apos;s committee — score delegates on GSL,
@@ -204,7 +184,6 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Queries sent from the public contact page */}
         <ContactInbox />
       </section>
     </>

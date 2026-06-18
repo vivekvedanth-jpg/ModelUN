@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { usersCol, type UserProfile } from "@/lib/server/db";
+import { usersCol, experiencesCol, questionsCol, documentsCol, committeesCol, type UserProfile } from "@/lib/server/db";
 import { getSessionUser, setSessionCookie, fail } from "@/lib/server/session";
 
 export const runtime = "nodejs";
@@ -66,6 +66,18 @@ export async function PATCH(req: NextRequest) {
       return fail("Another account already uses that email.", 409);
     }
     await users.updateOne({ email: me.email }, { $set: { email: newEmail } });
+    // Reassign all user-owned data to the new email address.
+    const oldEmailRe = new RegExp(`^${me.email}$`, "i");
+    const [expCol, qCol, docCol, comCol] = await Promise.all([
+      experiencesCol(), questionsCol(), documentsCol(), committeesCol(),
+    ]);
+    await Promise.all([
+      expCol.updateMany({ owner: oldEmailRe }, { $set: { owner: newEmail } }),
+      qCol.updateMany({ author: oldEmailRe }, { $set: { author: newEmail } }),
+      qCol.updateMany({ answeredBy: oldEmailRe }, { $set: { answeredBy: newEmail } }),
+      docCol.updateMany({ owner: oldEmailRe }, { $set: { owner: newEmail } }),
+      comCol.updateMany({ chair: oldEmailRe }, { $set: { chair: newEmail } }),
+    ]);
     const res = NextResponse.json({ ok: true, email: newEmail, oldEmail: me.email });
     setSessionCookie(res, newEmail); // re-issue the cookie for the new email
     return res;

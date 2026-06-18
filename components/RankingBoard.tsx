@@ -4,13 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import { getAccounts, type AccountDetail } from "@/lib/auth";
 import { getAllExperiences, PLACEMENTS, type MunExperience } from "@/lib/experience";
 import {
-  getPointsMap,
+  getRankingSettings,
   setPointsMap,
   resetPointsMap,
-  getManualOrder,
   setManualOrder,
   clearManualOrder,
   computeLeaderboard,
+  DEFAULT_POINTS,
 } from "@/lib/ranking";
 import { AwardIcon, ArrowUpIcon, ArrowDownIcon, CrownIcon } from "./icons";
 
@@ -21,17 +21,21 @@ function medal(rank: number): string {
 export default function RankingBoard() {
   const [accounts, setAccounts] = useState<AccountDetail[]>([]);
   const [experiences, setExperiences] = useState<MunExperience[]>([]);
-  const [points, setPoints] = useState<Record<string, number>>({});
+  const [points, setPoints] = useState<Record<string, number>>(DEFAULT_POINTS);
   const [order, setOrder] = useState<string[]>([]);
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
-    getAccounts()
-      .then(setAccounts)
-      .catch(() => setAccounts([]));
-    setExperiences(getAllExperiences());
-    setPoints(getPointsMap());
-    setOrder(getManualOrder());
+    Promise.all([
+      getAccounts().catch(() => [] as AccountDetail[]),
+      getAllExperiences().catch(() => [] as MunExperience[]),
+      getRankingSettings().catch(() => ({ points: DEFAULT_POINTS, manualOrder: [] })),
+    ]).then(([accts, exps, settings]) => {
+      setAccounts(accts);
+      setExperiences(exps);
+      setPoints(settings.points);
+      setOrder(settings.manualOrder);
+    });
   }, []);
 
   const leaderboard = useMemo(
@@ -44,33 +48,45 @@ export default function RankingBoard() {
     setPoints((prev) => ({ ...prev, [placement]: Number.isFinite(n) ? n : 0 }));
   }
 
-  function savePoints() {
-    setPointsMap(points);
-    setNotice("Points saved.");
+  async function savePoints() {
+    try {
+      await setPointsMap(points);
+      setNotice("Points saved.");
+    } catch {
+      setNotice("Failed to save points.");
+    }
     window.setTimeout(() => setNotice(""), 2500);
   }
 
-  function resetPoints() {
-    setPoints(resetPointsMap());
-    setNotice("Points reset to defaults.");
+  async function resetPoints() {
+    try {
+      const defaults = await resetPointsMap();
+      setPoints(defaults);
+      setNotice("Points reset to defaults.");
+    } catch {
+      setNotice("Failed to reset points.");
+    }
     window.setTimeout(() => setNotice(""), 2500);
   }
 
-  function move(email: string, dir: -1 | 1) {
-    // Start from the order currently shown on screen.
+  async function move(email: string, dir: -1 | 1) {
     const emails = leaderboard.map((r) => r.email);
     const i = emails.indexOf(email);
     const j = i + dir;
     if (i < 0 || j < 0 || j >= emails.length) return;
     [emails[i], emails[j]] = [emails[j], emails[i]];
     setOrder(emails);
-    setManualOrder(emails);
+    await setManualOrder(emails).catch(() => {});
   }
 
-  function resetOrder() {
-    clearManualOrder();
-    setOrder([]);
-    setNotice("Order reset to score ranking.");
+  async function resetOrder() {
+    try {
+      await clearManualOrder();
+      setOrder([]);
+      setNotice("Order reset to score ranking.");
+    } catch {
+      setNotice("Failed to reset order.");
+    }
     window.setTimeout(() => setNotice(""), 2500);
   }
 
@@ -135,7 +151,7 @@ export default function RankingBoard() {
               </span>
               <p className="font-semibold text-navy-800">No ranked delegates yet</p>
               <p className="max-w-sm text-sm text-navy-500">
-                Once delegates log conferences in “My MUNs”, they&apos;ll appear
+                Once delegates log conferences in &quot;My MUNs&quot;, they&apos;ll appear
                 here ranked by score.
               </p>
             </div>

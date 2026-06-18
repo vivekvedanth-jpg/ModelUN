@@ -12,15 +12,23 @@ export default function ContactInbox() {
   const [messages, setMessages] = useState<ContactMessage[]>([]);
 
   useEffect(() => {
-    setMessages(getMessages());
+    getMessages().then(setMessages).catch(() => setMessages([]));
   }, []);
+
+  async function handleDelete(id: string) {
+    try {
+      await deleteMessage(id);
+      setMessages((prev) => prev.filter((m) => m.id !== id));
+    } catch {
+      /* ignore */
+    }
+  }
 
   return (
     <div>
       <h2 className="text-2xl font-bold text-navy-900">Inbox</h2>
       <p className="mt-1 text-navy-600">
-        Queries sent from the contact page on this device. (Visitors&apos;
-        messages are also emailed to you directly.)
+        Queries sent from the contact page.
       </p>
 
       <div className="mt-6 space-y-4">
@@ -49,7 +57,7 @@ export default function ContactInbox() {
                   <span className="ml-2 text-xs text-navy-400">· {when(m.createdAt)}</span>
                 </div>
                 <button
-                  onClick={() => setMessages(deleteMessage(m.id))}
+                  onClick={() => handleDelete(m.id)}
                   className="inline-flex flex-shrink-0 items-center gap-1 text-xs font-semibold text-red-600 hover:text-red-700"
                 >
                   <TrashIcon width={14} height={14} /> Delete

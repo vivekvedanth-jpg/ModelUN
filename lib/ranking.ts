@@ -1,18 +1,6 @@
-/**
- * Delegate ranking for Phase 1.
- *
- * Each placement/award is worth points (configurable by admins). A delegate's
- * score is the sum of points across every conference they've logged. Admins can
- * also manually reorder the leaderboard; that order is persisted and takes
- * precedence over the score order until reset.
- *
- * Persisted in localStorage; replace with a backend in Phase 2.
- */
-
 import type { AccountDetail } from "./auth";
 import { PLACEMENTS, type MunExperience } from "./experience";
 
-/** Default points per placement (admins can change these). */
 export const DEFAULT_POINTS: Record<string, number> = {
   "Best Delegate": 20,
   "Outstanding Delegate": 15,
@@ -23,69 +11,62 @@ export const DEFAULT_POINTS: Record<string, number> = {
   "Other / None": 2,
 };
 
-const POINTS_KEY = "mun_ranking_points_v1";
-const ORDER_KEY = "mun_ranking_order_v1";
-
-function isBrowser(): boolean {
-  return typeof window !== "undefined";
-}
-
-/** Current points map (defaults merged with any admin overrides). */
-export function getPointsMap(): Record<string, number> {
-  const merged: Record<string, number> = {};
-  for (const p of PLACEMENTS) merged[p] = DEFAULT_POINTS[p] ?? 0;
-  if (!isBrowser()) return merged;
-  try {
-    const raw = window.localStorage.getItem(POINTS_KEY);
-    if (raw) Object.assign(merged, JSON.parse(raw) as Record<string, number>);
-  } catch {
-    /* ignore */
-  }
-  return merged;
-}
-
-export function setPointsMap(map: Record<string, number>): void {
-  if (!isBrowser()) return;
-  window.localStorage.setItem(POINTS_KEY, JSON.stringify(map));
-}
-
-export function resetPointsMap(): Record<string, number> {
-  if (isBrowser()) window.localStorage.removeItem(POINTS_KEY);
-  return getPointsMap();
-}
-
-export function getManualOrder(): string[] {
-  if (!isBrowser()) return [];
-  try {
-    const raw = window.localStorage.getItem(ORDER_KEY);
-    return raw ? (JSON.parse(raw) as string[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-export function setManualOrder(emails: string[]): void {
-  if (!isBrowser()) return;
-  window.localStorage.setItem(ORDER_KEY, JSON.stringify(emails));
-}
-
-export function clearManualOrder(): void {
-  if (isBrowser()) window.localStorage.removeItem(ORDER_KEY);
-}
-
 export interface LeaderRow {
   email: string;
   name: string;
   role: AccountDetail["role"];
   score: number;
-  count: number; // number of conferences
+  count: number;
 }
 
-function nameFor(account: AccountDetail): string {
-  return account.profile.fullName?.trim() || account.email.split("@")[0];
+async function api(path: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(path, { credentials: "include", ...init });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? "Request failed.");
+  }
+  return res;
 }
 
-/** Sum of points a single set of experiences is worth. */
+export async function getRankingSettings(): Promise<{ points: Record<string, number>; manualOrder: string[] }> {
+  const res = await api("/api/ranking");
+  return res.json() as Promise<{ points: Record<string, number>; manualOrder: string[] }>;
+}
+
+export async function setPointsMap(map: Record<string, number>): Promise<void> {
+  await api("/api/ranking", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "set_points", value: map }),
+  });
+}
+
+export async function resetPointsMap(): Promise<Record<string, number>> {
+  const res = await api("/api/ranking", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "reset_points" }),
+  });
+  return ((await res.json()) as { points: Record<string, number> }).points;
+}
+
+export async function setManualOrder(emails: string[]): Promise<void> {
+  await api("/api/ranking", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "set_order", value: emails }),
+  });
+}
+
+export async function clearManualOrder(): Promise<void> {
+  await api("/api/ranking", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "clear_order" }),
+  });
+}
+
+/** Pure: computes score for a set of experiences. */
 export function scoreForExperiences(
   experiences: MunExperience[],
   points: Record<string, number>
@@ -93,11 +74,7 @@ export function scoreForExperiences(
   return experiences.reduce((sum, e) => sum + (points[e.placement] ?? 0), 0);
 }
 
-/**
- * Builds the leaderboard. Only delegates who have logged at least one
- * conference are included. Sorted by score (desc); if a manual order is set,
- * those entries lead in that order and the rest follow by score.
- */
+/** Pure: builds the leaderboard from fetched data. */
 export function computeLeaderboard(
   accounts: AccountDetail[],
   experiences: MunExperience[],
@@ -110,6 +87,10 @@ export function computeLeaderboard(
     const list = byOwner.get(key) ?? [];
     list.push(e);
     byOwner.set(key, list);
+  }
+
+  function nameFor(a: AccountDetail): string {
+    return a.profile.fullName?.trim() || a.email.split("@")[0];
   }
 
   const rows: LeaderRow[] = accounts
@@ -141,3 +122,6 @@ export function computeLeaderboard(
     return b.score - a.score || a.name.localeCompare(b.name);
   });
 }
+
+// Keep PLACEMENTS re-export so existing imports still work.
+export { PLACEMENTS };

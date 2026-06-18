@@ -9,12 +9,9 @@ import { PlayIcon, TrashIcon } from "./icons";
 
 function levelClass(level: string) {
   switch (level) {
-    case "Beginner":
-      return "bg-green-100 text-green-700";
-    case "Intermediate":
-      return "bg-gold-100 text-gold-700";
-    default:
-      return "bg-navy-100 text-navy-700";
+    case "Beginner": return "bg-green-100 text-green-700";
+    case "Intermediate": return "bg-gold-100 text-gold-700";
+    default: return "bg-navy-100 text-navy-700";
   }
 }
 
@@ -23,13 +20,16 @@ export default function VideoLibrary() {
   const admin = isAdmin(user?.role);
   const [videos, setVideos] = useState<Video[]>([]);
 
-  useEffect(() => {
-    setVideos(getVideos());
-  }, []);
+  const refresh = () => getVideos().then(setVideos).catch(() => {});
 
-  function handleDelete(v: Video) {
+  useEffect(() => { refresh(); }, []);
+
+  async function handleDelete(v: Video) {
     if (window.confirm(`Delete the video "${v.title}"?`)) {
-      setVideos(deleteVideo(v.id));
+      try {
+        await deleteVideo(v.id);
+        setVideos((prev) => prev.filter((x) => x.id !== v.id));
+      } catch { /* ignore */ }
     }
   }
 
@@ -43,7 +43,7 @@ export default function VideoLibrary() {
             description="Add a lesson to the library for all delegates."
             accept="video/*"
             cta="Publish video"
-            onAdded={() => setVideos(getVideos())}
+            onAdded={refresh}
           />
         </div>
       )}
@@ -52,7 +52,6 @@ export default function VideoLibrary() {
         {videos.map((v) => {
           const card = (
             <>
-              {/* Thumbnail */}
               <div className="relative flex aspect-video items-center justify-center bg-navy-radial">
                 <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur-sm transition-transform group-hover:scale-110">
                   <PlayIcon width={26} height={26} />
@@ -64,7 +63,6 @@ export default function VideoLibrary() {
                   {v.duration}
                 </span>
               </div>
-              {/* Body */}
               <div className="p-5">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gold-600">
                   {v.category}

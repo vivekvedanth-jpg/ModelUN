@@ -11,7 +11,7 @@ export default function ContactForm() {
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
 
@@ -21,15 +21,17 @@ export default function ContactForm() {
       return;
     }
 
-    // Save a local copy (visible to the Owner in the dashboard inbox)…
-    saveMessage(payload);
-    // …and open the visitor's mail app to actually deliver it.
-    window.location.href = buildMailto(payload);
-
-    setSent(true);
-    setName("");
-    setEmail("");
-    setMessage("");
+    try {
+      await saveMessage(payload);
+      // Also open the visitor's mail app as a secondary delivery path.
+      window.location.href = buildMailto(payload);
+      setSent(true);
+      setName("");
+      setEmail("");
+      setMessage("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    }
   }
 
   if (sent) {

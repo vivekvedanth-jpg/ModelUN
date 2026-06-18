@@ -52,7 +52,8 @@ export default function ExperienceManager() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (user) setItems(getExperiences(user.email));
+    if (!user) return;
+    getExperiences(user.email).then(setItems).catch(() => setItems([]));
   }, [user]);
 
   function resetForm() {
@@ -84,17 +85,11 @@ export default function ExperienceManager() {
         scorecardDataUrl = await readFileAsDataUrl(file);
       }
 
-      const next = addExperience(user, {
-        conference,
-        date,
-        committee,
-        portfolio,
-        placement,
-        notes,
-        scorecardName,
-        scorecardDataUrl,
+      const added = await addExperience({
+        conference, date, committee, portfolio, placement, notes,
+        scorecardName, scorecardDataUrl,
       });
-      setItems(next);
+      setItems((prev) => [added, ...prev]);
       resetForm();
       setNotice("Experience added.");
     } catch (err) {
@@ -102,10 +97,11 @@ export default function ExperienceManager() {
     }
   }
 
-  function handleDelete(item: MunExperience) {
+  async function handleDelete(item: MunExperience) {
     if (!window.confirm(`Remove "${item.conference}" from your experience?`)) return;
     try {
-      setItems(deleteExperience(user, item.id));
+      await deleteExperience(item.id);
+      setItems((prev) => prev.filter((i) => i.id !== item.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     }

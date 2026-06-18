@@ -3,11 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "./AuthProvider";
 import { isAdmin } from "@/lib/auth";
-import {
-  getResources,
-  deleteResource,
-  type Resource,
-} from "@/lib/content";
+import { getResources, deleteResource, type Resource } from "@/lib/content";
 import UploadCard from "./UploadCard";
 import { DocumentIcon, ArrowRightIcon, TrashIcon } from "./icons";
 
@@ -16,13 +12,16 @@ export default function ResourceLibrary() {
   const admin = isAdmin(user?.role);
   const [resources, setResources] = useState<Resource[]>([]);
 
-  useEffect(() => {
-    setResources(getResources());
-  }, []);
+  const refresh = () => getResources().then(setResources).catch(() => {});
 
-  function handleDelete(r: Resource) {
+  useEffect(() => { refresh(); }, []);
+
+  async function handleDelete(r: Resource) {
     if (window.confirm(`Delete the resource "${r.title}"?`)) {
-      setResources(deleteResource(r.id));
+      try {
+        await deleteResource(r.id);
+        setResources((prev) => prev.filter((x) => x.id !== r.id));
+      } catch { /* ignore */ }
     }
   }
 
@@ -36,7 +35,7 @@ export default function ResourceLibrary() {
             description="Share a guide, template, or example with all delegates."
             accept=".pdf,.doc,.docx"
             cta="Publish resource"
-            onAdded={() => setResources(getResources())}
+            onAdded={refresh}
           />
         </div>
       )}

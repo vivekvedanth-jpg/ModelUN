@@ -17,21 +17,19 @@ export default function CommitteeView() {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   function load() {
-    const list = getAllCommittees();
-    setCommittees(list);
-    setActiveId((cur) =>
-      cur && list.some((c) => c.id === cur) ? cur : list[0]?.id ?? null
-    );
+    getAllCommittees().then((list) => {
+      setCommittees(list);
+      setActiveId((cur) =>
+        cur && list.some((c) => c.id === cur) ? cur : list[0]?.id ?? null
+      );
+    }).catch(() => {});
   }
 
   useEffect(() => {
     load();
-    // Live-update when the chair changes things (fires in other tabs).
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === "mun_committees_v1" || e.key === null) load();
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    // Poll every 15s so the delegate sees speaker list updates without a manual refresh.
+    const interval = setInterval(load, 15000);
+    return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

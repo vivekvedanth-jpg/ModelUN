@@ -11,9 +11,6 @@ import {
   isAdmin,
   isOwner,
 } from "@/lib/auth";
-import { reassignExperienceOwner } from "@/lib/experience";
-import { reassignAuthor } from "@/lib/qa";
-import { reassignDocumentOwner } from "@/lib/documents";
 import {
   GearIcon,
   MailIcon,
@@ -98,14 +95,7 @@ export default function SettingsPanel() {
     setEmailError("");
     setEmailNotice("");
     try {
-      const { oldEmail, email: updated } = await changeEmail(
-        newEmail,
-        emailPassword
-      );
-      // Keep this device's local records pointing at the new email.
-      reassignExperienceOwner(oldEmail, updated);
-      reassignAuthor(oldEmail, updated);
-      reassignDocumentOwner(oldEmail, updated);
+      const { email: updated } = await changeEmail(newEmail, emailPassword);
       await refresh();
       setNewEmail("");
       setEmailPassword("");

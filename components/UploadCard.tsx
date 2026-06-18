@@ -5,23 +5,14 @@ import { addResource, addVideo } from "@/lib/content";
 import { UploadIcon, CheckIcon } from "./icons";
 
 interface UploadCardProps {
-  /** Which library this card publishes to. */
   kind: "video" | "resource";
   title: string;
   description: string;
-  /** File input accept attribute, e.g. "video/*" or ".pdf,.docx". */
   accept?: string;
   cta: string;
-  /** Called after a successful publish so the parent list can refresh. */
   onAdded?: () => void;
 }
 
-/**
- * Admin-only publish control. Records the new item's metadata (title + optional
- * link) into the localStorage content store so it appears immediately in the
- * relevant library. Real file storage is a Phase 2 (backend) task. Gate it with
- * <AdminOnly> wherever it's used.
- */
 export default function UploadCard({
   kind,
   title,
@@ -33,23 +24,28 @@ export default function UploadCard({
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [done, setDone] = useState(false);
+  const [error, setError] = useState("");
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const clean = name.trim();
     if (!clean) return;
+    setError("");
 
-    if (kind === "video") {
-      addVideo({ title: clean, url: url.trim() || undefined });
-    } else {
-      addResource({ title: clean, url: url.trim() || undefined });
+    try {
+      if (kind === "video") {
+        await addVideo({ title: clean, url: url.trim() || undefined });
+      } else {
+        await addResource({ title: clean, url: url.trim() || undefined });
+      }
+      setDone(true);
+      setName("");
+      setUrl("");
+      onAdded?.();
+      window.setTimeout(() => setDone(false), 4000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
     }
-
-    setDone(true);
-    setName("");
-    setUrl("");
-    onAdded?.();
-    window.setTimeout(() => setDone(false), 4000);
   }
 
   return (
@@ -95,6 +91,11 @@ export default function UploadCard({
         <input type="file" accept={accept} className="hidden" />
       </label>
 
+      {error && (
+        <p className="mt-3 flex items-center gap-2 rounded-lg bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">
+          {error}
+        </p>
+      )}
       {done && (
         <p className="mt-3 flex items-center gap-2 rounded-lg bg-green-50 px-4 py-2.5 text-sm font-medium text-green-700">
           <CheckIcon width={16} height={16} />

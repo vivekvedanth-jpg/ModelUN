@@ -62,8 +62,6 @@ export default function ResolutionEditor() {
   const activeIdRef = useRef<string | null>(null);
   const titleRef = useRef("");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const userRef = useRef(user);
-  userRef.current = user; // always read the latest user inside saves
 
   function refreshEmptyAndCount() {
     const el = editorRef.current;
@@ -73,18 +71,21 @@ export default function ResolutionEditor() {
     setWords(text === "" ? 0 : text.split(/\s+/).length);
   }
 
-  function doSave() {
+  async function doSave() {
     const id = activeIdRef.current;
-    const u = userRef.current;
-    if (!id || !u) return;
+    if (!id) return;
     const html = editorRef.current?.innerHTML ?? "";
     try {
-      updateDocument(u, id, { title: titleRef.current, html });
+      await updateDocument(id, { title: titleRef.current, html });
       setStatus("saved");
       setSavedAt(Date.now());
-      setDocs(getDocuments(u.email));
+      // Update the doc in the sidebar list.
+      setDocs((prev) =>
+        prev.map((d) =>
+          d.id === id ? { ...d, title: titleRef.current, html, updatedAt: Date.now() } : d
+        )
+      );
     } catch {
-      // Document may have been removed; ignore.
       setStatus("saved");
     }
   }
@@ -92,14 +93,14 @@ export default function ResolutionEditor() {
   function scheduleSave() {
     setStatus("saving");
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(doSave, 800);
+    saveTimer.current = setTimeout(() => { void doSave(); }, 800);
   }
 
   function flushSave() {
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
-      doSave();
+      void doSave();
     }
   }
 
@@ -111,34 +112,40 @@ export default function ResolutionEditor() {
     setTitle(doc.title);
   }
 
-  // Load (or create) the delegate's documents once we know who's signed in.
-  useEffect(() => {
-    if (!user) return;
-    let list = getDocuments(user.email);
-    if (list.length === 0) {
-      createDocument(user, "My first resolution");
-      list = getDocuments(user.email);
-    }
-    setDocs(list);
-    selectDoc(list[0]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
-
   // Load the active document's content into the editor when it changes.
   useEffect(() => {
     const el = editorRef.current;
     if (!el || !activeId) return;
-    el.innerHTML = getDocument(activeId)?.html ?? "";
-    refreshEmptyAndCount();
-    setStatus("saved");
+    getDocument(activeId).then((doc) => {
+      el.innerHTML = doc?.html ?? "";
+      refreshEmptyAndCount();
+      setStatus("saved");
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
 
-  // Save anything pending if the user leaves the page.
+  // Load (or create) documents once we know who's signed in.
+  useEffect(() => {
+    if (!user) return;
+    async function init() {
+      let list = await getDocuments();
+      if (list.length === 0) {
+        await createDocument("My first resolution");
+        list = await getDocuments();
+      }
+      setDocs(list);
+      if (list[0]) selectDoc(list[0]);
+    }
+    void init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  // Save anything pending when the component unmounts.
   useEffect(() => {
     return () => {
       if (saveTimer.current) {
         clearTimeout(saveTimer.current);
-        doSave();
+        void doSave();
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -157,28 +164,26 @@ export default function ResolutionEditor() {
     scheduleSave();
   }
 
-  function newDoc() {
-    if (!user) return;
+  async function newDoc() {
     flushSave();
-    createDocument(user, "Untitled resolution");
-    const list = getDocuments(user.email);
+    const doc = await createDocument("Untitled resolution");
+    const list = await getDocuments();
     setDocs(list);
-    selectDoc(list[0]);
+    selectDoc(doc);
   }
 
-  function removeDoc(id: string) {
-    if (!user) return;
+  async function removeDoc(id: string) {
     if (!window.confirm("Delete this document? This cannot be undone.")) return;
-    // Cancel any pending save so we don't resurrect a deleted doc.
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
     }
-    let list = deleteDocument(user, id);
+    await deleteDocument(id);
+    let list = await getDocuments();
     if (activeIdRef.current === id) {
       if (list.length === 0) {
-        createDocument(user, "Untitled resolution");
-        list = getDocuments(user.email);
+        await createDocument("Untitled resolution");
+        list = await getDocuments();
       }
       setDocs(list);
       selectDoc(list[0]);
@@ -215,7 +220,7 @@ export default function ResolutionEditor() {
 <body>
   <h1 class="doc-title">${safeTitle}</h1>
   ${body}
-  <script>window.onload = function () { window.print(); };</script>
+  <script>window.onload = function () { window.print(); };<\/script>
 </body>
 </html>`);
     w.document.close();
@@ -231,12 +236,12 @@ export default function ResolutionEditor() {
 
         <div className="mt-4 space-y-1.5">
           {docs.map((d) => {
-            const active = d.id === activeId;
+            const isActive = d.id === activeId;
             return (
               <div
                 key={d.id}
                 className={`group flex items-center gap-2 rounded-xl border px-3 py-2.5 ${
-                  active
+                  isActive
                     ? "border-navy-800 bg-navy-50"
                     : "border-navy-100 bg-white hover:border-navy-300"
                 }`}

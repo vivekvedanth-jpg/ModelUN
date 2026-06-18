@@ -39,18 +39,19 @@ export default function QASection() {
   const [visibility, setVisibility] = useState<Visibility>("public");
   const [error, setError] = useState("");
 
-  // Per-question answer drafts (admin only).
   const [drafts, setDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    setQuestions(getVisibleQuestions(user));
+    if (!user) return;
+    getVisibleQuestions().then(setQuestions).catch(() => setQuestions([]));
   }, [user]);
 
-  function handleAsk(e: FormEvent) {
+  async function handleAsk(e: FormEvent) {
     e.preventDefault();
     setError("");
     try {
-      setQuestions(addQuestion(user, text, visibility));
+      const q = await addQuestion(text, visibility);
+      setQuestions((prev) => [q, ...prev]);
       setText("");
       setVisibility("public");
     } catch (err) {
@@ -58,20 +59,24 @@ export default function QASection() {
     }
   }
 
-  function handleAnswer(id: string) {
+  async function handleAnswer(id: string) {
     setError("");
     try {
-      setQuestions(answerQuestion(user, id, drafts[id] ?? ""));
+      await answerQuestion(id, drafts[id] ?? "");
+      // Refresh questions to get updated answer.
+      const updated = await getVisibleQuestions();
+      setQuestions(updated);
       setDrafts((d) => ({ ...d, [id]: "" }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     }
   }
 
-  function handleDelete(id: string) {
+  async function handleDelete(id: string) {
     setError("");
     try {
-      setQuestions(deleteQuestion(user, id));
+      await deleteQuestion(id);
+      setQuestions((prev) => prev.filter((q) => q.id !== id));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     }
@@ -211,7 +216,6 @@ export default function QASection() {
 
                 <p className="mt-3 text-navy-800">{q.text}</p>
 
-                {/* Answer */}
                 {q.answer ? (
                   <div className="mt-4 rounded-xl border border-gold-200 bg-gold-50/60 p-4">
                     <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gold-700">

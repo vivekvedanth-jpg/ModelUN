@@ -48,10 +48,8 @@ export default function CommitteeBoard() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
-  // Add-delegate form.
   const [delName, setDelName] = useState("");
   const [delPortfolio, setDelPortfolio] = useState("");
-  // Add-speaker form.
   const [speakerName, setSpeakerName] = useState("");
 
   const active = useMemo(
@@ -61,18 +59,19 @@ export default function CommitteeBoard() {
 
   useEffect(() => {
     if (!user) return;
-    const list = getCommitteesForUser(user);
-    setCommittees(list);
-    setActiveId((cur) =>
-      cur && list.some((c) => c.id === cur) ? cur : list[0]?.id ?? null
-    );
+    getCommitteesForUser().then((list) => {
+      setCommittees(list);
+      setActiveId((cur) =>
+        cur && list.some((c) => c.id === cur) ? cur : list[0]?.id ?? null
+      );
+    }).catch(() => {});
   }, [user]);
 
-  /** Runs an in-committee mutation and folds the updated committee back in. */
-  function edit(fn: () => Committee) {
+  /** Runs an async committee mutation and folds the updated committee back in. */
+  async function edit(fn: () => Promise<Committee>) {
     setError("");
     try {
-      const updated = fn();
+      const updated = await fn();
       setCommittees((prev) =>
         prev.map((c) => (c.id === updated.id ? updated : c))
       );
@@ -81,10 +80,10 @@ export default function CommitteeBoard() {
     }
   }
 
-  function handleCreate() {
+  async function handleCreate() {
     setError("");
     try {
-      const c = createCommittee(user);
+      const c = await createCommittee();
       setCommittees((prev) => [c, ...prev]);
       setActiveId(c.id);
     } catch (e) {
@@ -92,17 +91,13 @@ export default function CommitteeBoard() {
     }
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!active) return;
-    if (
-      !window.confirm(
-        `Delete the committee "${active.name}" and all its scores? This cannot be undone.`
-      )
-    )
-      return;
+    if (!window.confirm(`Delete the committee "${active.name}" and all its scores? This cannot be undone.`)) return;
     setError("");
     try {
-      const list = deleteCommittee(user, active.id);
+      await deleteCommittee(active.id);
+      const list = await getCommitteesForUser();
       setCommittees(list);
       setActiveId(list[0]?.id ?? null);
     } catch (e) {
@@ -110,24 +105,21 @@ export default function CommitteeBoard() {
     }
   }
 
-  function handleAddDelegate(e: FormEvent) {
+  async function handleAddDelegate(e: FormEvent) {
     e.preventDefault();
     if (!active || !delName.trim()) return;
-    edit(() =>
-      addDelegate(user, active.id, { name: delName, portfolio: delPortfolio })
-    );
+    await edit(() => addDelegate(active.id, { name: delName, portfolio: delPortfolio }));
     setDelName("");
     setDelPortfolio("");
   }
 
-  function handleAddSpeaker(e: FormEvent) {
+  async function handleAddSpeaker(e: FormEvent) {
     e.preventDefault();
     if (!active || !speakerName.trim()) return;
-    edit(() => addSpeaker(user, active.id, speakerName));
+    await edit(() => addSpeaker(active.id, speakerName));
     setSpeakerName("");
   }
 
-  // Speaker suggestions come from this committee's own roster (names + countries).
   const speakerSuggestions = useMemo(() => {
     if (!active) return [];
     const set = new Set<string>();
@@ -138,7 +130,6 @@ export default function CommitteeBoard() {
     return Array.from(set);
   }, [active]);
 
-  // Standings = the committee's own ranking, by total points (stable on edit).
   const standings = useMemo(() => {
     if (!active) return [];
     return [...active.delegates]
@@ -206,23 +197,13 @@ export default function CommitteeBoard() {
               <div className="min-w-0 flex-1">
                 <input
                   value={active.name}
-                  onChange={(e) =>
-                    edit(() =>
-                      renameCommittee(user, active.id, { name: e.target.value })
-                    )
-                  }
+                  onChange={(e) => edit(() => renameCommittee(active.id, { name: e.target.value }))}
                   placeholder="Committee name (e.g. UNSC)"
                   className="w-full bg-transparent font-serif text-2xl font-bold text-navy-900 outline-none placeholder:text-silver-500"
                 />
                 <input
                   value={active.conference ?? ""}
-                  onChange={(e) =>
-                    edit(() =>
-                      renameCommittee(user, active.id, {
-                        conference: e.target.value,
-                      })
-                    )
-                  }
+                  onChange={(e) => edit(() => renameCommittee(active.id, { conference: e.target.value }))}
                   placeholder="Conference / session (optional)"
                   className="mt-1 w-full bg-transparent text-sm text-navy-600 outline-none placeholder:text-silver-500"
                 />
@@ -246,7 +227,7 @@ export default function CommitteeBoard() {
             </div>
           </div>
 
-          {/* Speaker list (GSL) — delegates see this live on their Committee page */}
+          {/* Speaker list */}
           <div>
             <h2 className="text-xl font-bold text-navy-900">Speaker list</h2>
             <p className="mt-1 text-sm text-navy-600">
@@ -254,10 +235,7 @@ export default function CommitteeBoard() {
               Committee page.
             </p>
 
-            <form
-              onSubmit={handleAddSpeaker}
-              className="mt-4 flex flex-wrap items-center gap-2"
-            >
+            <form onSubmit={handleAddSpeaker} className="mt-4 flex flex-wrap items-center gap-2">
               <input
                 list="committee-speaker-options"
                 value={speakerName}
@@ -271,20 +249,13 @@ export default function CommitteeBoard() {
                   <option key={n} value={n} />
                 ))}
               </datalist>
-              <button
-                type="submit"
-                disabled={!speakerName.trim()}
-                className="btn-primary !py-2.5"
-              >
+              <button type="submit" disabled={!speakerName.trim()} className="btn-primary !py-2.5">
                 <PlusIcon width={16} height={16} /> Add
               </button>
               {active.speakers.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => {
-                    if (window.confirm("Clear the whole speaker list?"))
-                      edit(() => clearSpeakers(user, active.id));
-                  }}
+                  onClick={() => { if (window.confirm("Clear the whole speaker list?")) edit(() => clearSpeakers(active.id)); }}
                   className="btn-ghost !py-2.5"
                 >
                   Clear all
@@ -304,100 +275,28 @@ export default function CommitteeBoard() {
                     return (
                       <li
                         key={s.id}
-                        className={`flex items-center gap-3 px-4 py-2.5 ${
-                          current
-                            ? "bg-emerald-50"
-                            : s.done
-                            ? "bg-navy-50/40"
-                            : ""
-                        }`}
+                        className={`flex items-center gap-3 px-4 py-2.5 ${current ? "bg-emerald-50" : s.done ? "bg-navy-50/40" : ""}`}
                       >
-                        <span className="w-6 flex-shrink-0 text-center text-sm font-bold text-navy-500">
-                          {i + 1}
-                        </span>
-                        <span
-                          className={`min-w-0 flex-1 truncate font-semibold ${
-                            s.done && !current
-                              ? "text-navy-400 line-through"
-                              : "text-navy-900"
-                          }`}
-                        >
+                        <span className="w-6 flex-shrink-0 text-center text-sm font-bold text-navy-500">{i + 1}</span>
+                        <span className={`min-w-0 flex-1 truncate font-semibold ${s.done && !current ? "text-navy-400 line-through" : "text-navy-900"}`}>
                           {s.name}
                         </span>
-                        {current && (
-                          <span className="badge bg-emerald-500 text-white">
-                            Speaking
-                          </span>
-                        )}
-                        {s.done && !current && (
-                          <span className="badge bg-navy-100 text-navy-600">
-                            Done
-                          </span>
-                        )}
+                        {current && <span className="badge bg-emerald-500 text-white">Speaking</span>}
+                        {s.done && !current && <span className="badge bg-navy-100 text-navy-600">Done</span>}
                         <div className="flex flex-shrink-0 items-center gap-1">
-                          <button
-                            onClick={() =>
-                              edit(() =>
-                                setCurrentSpeaker(
-                                  user,
-                                  active.id,
-                                  current ? null : s.id
-                                )
-                              )
-                            }
-                            title={current ? "Stop speaking" : "Set as speaking"}
-                            aria-label="Set as speaking"
-                            className={`rounded-lg border p-1.5 ${
-                              current
-                                ? "border-emerald-300 bg-emerald-100 text-emerald-700"
-                                : "border-navy-200 text-navy-600 hover:bg-navy-50"
-                            }`}
-                          >
+                          <button onClick={() => edit(() => setCurrentSpeaker(active.id, current ? null : s.id))} title={current ? "Stop speaking" : "Set as speaking"} aria-label="Set as speaking" className={`rounded-lg border p-1.5 ${current ? "border-emerald-300 bg-emerald-100 text-emerald-700" : "border-navy-200 text-navy-600 hover:bg-navy-50"}`}>
                             <MicIcon width={14} height={14} />
                           </button>
-                          <button
-                            onClick={() =>
-                              edit(() =>
-                                toggleSpeakerDone(user, active.id, s.id)
-                              )
-                            }
-                            title="Mark done"
-                            aria-label="Mark done"
-                            className={`rounded-lg border p-1.5 ${
-                              s.done
-                                ? "border-navy-300 bg-navy-100 text-navy-700"
-                                : "border-navy-200 text-navy-600 hover:bg-navy-50"
-                            }`}
-                          >
+                          <button onClick={() => edit(() => toggleSpeakerDone(active.id, s.id))} title="Mark done" aria-label="Mark done" className={`rounded-lg border p-1.5 ${s.done ? "border-navy-300 bg-navy-100 text-navy-700" : "border-navy-200 text-navy-600 hover:bg-navy-50"}`}>
                             <CheckIcon width={14} height={14} />
                           </button>
-                          <button
-                            onClick={() =>
-                              edit(() => moveSpeaker(user, active.id, s.id, -1))
-                            }
-                            disabled={i === 0}
-                            aria-label="Move up"
-                            className="rounded-lg border border-navy-200 p-1.5 text-navy-600 hover:bg-navy-50 disabled:opacity-30"
-                          >
+                          <button onClick={() => edit(() => moveSpeaker(active.id, s.id, -1))} disabled={i === 0} aria-label="Move up" className="rounded-lg border border-navy-200 p-1.5 text-navy-600 hover:bg-navy-50 disabled:opacity-30">
                             <ArrowUpIcon width={14} height={14} />
                           </button>
-                          <button
-                            onClick={() =>
-                              edit(() => moveSpeaker(user, active.id, s.id, 1))
-                            }
-                            disabled={i === active.speakers.length - 1}
-                            aria-label="Move down"
-                            className="rounded-lg border border-navy-200 p-1.5 text-navy-600 hover:bg-navy-50 disabled:opacity-30"
-                          >
+                          <button onClick={() => edit(() => moveSpeaker(active.id, s.id, 1))} disabled={i === active.speakers.length - 1} aria-label="Move down" className="rounded-lg border border-navy-200 p-1.5 text-navy-600 hover:bg-navy-50 disabled:opacity-30">
                             <ArrowDownIcon width={14} height={14} />
                           </button>
-                          <button
-                            onClick={() =>
-                              edit(() => removeSpeaker(user, active.id, s.id))
-                            }
-                            aria-label="Remove speaker"
-                            className="rounded-lg p-1.5 text-navy-300 hover:bg-red-50 hover:text-red-600"
-                          >
+                          <button onClick={() => edit(() => removeSpeaker(active.id, s.id))} aria-label="Remove speaker" className="rounded-lg p-1.5 text-navy-300 hover:bg-red-50 hover:text-red-600">
                             <TrashIcon width={14} height={14} />
                           </button>
                         </div>
@@ -409,7 +308,7 @@ export default function CommitteeBoard() {
             </div>
           </div>
 
-          {/* Standings — the committee's own ranking */}
+          {/* Standings */}
           <div>
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
@@ -421,11 +320,7 @@ export default function CommitteeBoard() {
                 </p>
               </div>
               <button
-                onClick={() =>
-                  edit(() =>
-                    setPublished(user, active.id, !active.published)
-                  )
-                }
+                onClick={() => edit(() => setPublished(active.id, !active.published))}
                 className={active.published ? "btn-ghost !py-2" : "btn-gold !py-2"}
               >
                 {active.published ? "Hide from delegates" : "Publish scores"}
@@ -439,31 +334,16 @@ export default function CommitteeBoard() {
               ) : (
                 <ul className="divide-y divide-navy-100">
                   {standings.map(({ d, total }, i) => (
-                    <li
-                      key={d.id}
-                      className={`flex items-center gap-3 px-5 py-3 ${
-                        i < 3 ? "bg-gold-50/50" : ""
-                      }`}
-                    >
-                      <span className="w-8 flex-shrink-0 text-center text-lg font-bold text-navy-900">
-                        {medal(i)}
-                      </span>
+                    <li key={d.id} className={`flex items-center gap-3 px-5 py-3 ${i < 3 ? "bg-gold-50/50" : ""}`}>
+                      <span className="w-8 flex-shrink-0 text-center text-lg font-bold text-navy-900">{medal(i)}</span>
                       <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-navy-800 text-xs font-bold text-white">
                         {(d.name || "?").slice(0, 1).toUpperCase()}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <div className="truncate font-semibold text-navy-900">
-                          {d.name}
-                        </div>
-                        {d.portfolio && (
-                          <div className="truncate text-xs text-navy-500">
-                            {d.portfolio}
-                          </div>
-                        )}
+                        <div className="truncate font-semibold text-navy-900">{d.name}</div>
+                        {d.portfolio && <div className="truncate text-xs text-navy-500">{d.portfolio}</div>}
                       </div>
-                      <span className="badge bg-gold-100 text-gold-700">
-                        {total} pts
-                      </span>
+                      <span className="badge bg-gold-100 text-gold-700">{total} pts</span>
                     </li>
                   ))}
                 </ul>
@@ -481,10 +361,7 @@ export default function CommitteeBoard() {
                   delegates as you like — everything saves automatically.
                 </p>
               </div>
-              <button
-                onClick={() => edit(() => addColumn(user, active.id))}
-                className="btn-ghost !px-4 !py-2 text-sm"
-              >
+              <button onClick={() => edit(() => addColumn(active.id))} className="btn-ghost !px-4 !py-2 text-sm">
                 <PlusIcon width={16} height={16} /> Add category
               </button>
             </div>
@@ -493,38 +370,18 @@ export default function CommitteeBoard() {
               <table className="w-full border-collapse text-left text-sm">
                 <thead className="bg-navy-50 text-navy-600">
                   <tr>
-                    <th className="sticky left-0 z-10 bg-navy-50 px-4 py-3 font-semibold">
-                      Delegate
-                    </th>
+                    <th className="sticky left-0 z-10 bg-navy-50 px-4 py-3 font-semibold">Delegate</th>
                     {active.columns.map((col) => (
                       <th key={col.id} className="px-2 py-2 font-semibold">
                         <div className="group flex items-center justify-center gap-0.5">
                           <input
                             value={col.label}
-                            onChange={(e) =>
-                              edit(() =>
-                                renameColumn(
-                                  user,
-                                  active.id,
-                                  col.id,
-                                  e.target.value
-                                )
-                              )
-                            }
+                            onChange={(e) => edit(() => renameColumn(active.id, col.id, e.target.value))}
                             aria-label="Category name"
                             className="w-24 rounded-md bg-transparent px-1.5 py-1 text-center text-xs font-bold uppercase tracking-wide text-navy-700 hover:bg-white focus:bg-white focus:outline-none focus:ring-1 focus:ring-navy-300"
                           />
                           <button
-                            onClick={() => {
-                              if (
-                                window.confirm(
-                                  `Remove the "${col.label}" category from every delegate?`
-                                )
-                              )
-                                edit(() =>
-                                  removeColumn(user, active.id, col.id)
-                                );
-                            }}
+                            onClick={() => { if (window.confirm(`Remove the "${col.label}" category from every delegate?`)) edit(() => removeColumn(active.id, col.id)); }}
                             aria-label="Remove category"
                             className="flex-shrink-0 rounded p-0.5 text-navy-300 opacity-0 transition-opacity hover:text-red-600 group-hover:opacity-100"
                           >
@@ -540,47 +397,23 @@ export default function CommitteeBoard() {
                 <tbody className="divide-y divide-navy-100">
                   {active.delegates.length === 0 ? (
                     <tr>
-                      <td
-                        colSpan={active.columns.length + 3}
-                        className="px-4 py-8 text-center text-sm text-navy-500"
-                      >
-                        No delegates yet — add your committee&apos;s delegates
-                        below.
+                      <td colSpan={active.columns.length + 3} className="px-4 py-8 text-center text-sm text-navy-500">
+                        No delegates yet — add your committee&apos;s delegates below.
                       </td>
                     </tr>
                   ) : (
                     active.delegates.map((d) => (
                       <tr key={d.id} className="hover:bg-navy-50/40">
                         <td className="sticky left-0 z-10 bg-white px-4 py-2.5">
-                          <div className="font-semibold text-navy-900">
-                            {d.name}
-                          </div>
-                          {d.portfolio && (
-                            <div className="text-xs text-navy-500">
-                              {d.portfolio}
-                            </div>
-                          )}
+                          <div className="font-semibold text-navy-900">{d.name}</div>
+                          {d.portfolio && <div className="text-xs text-navy-500">{d.portfolio}</div>}
                         </td>
                         {active.columns.map((col) => (
                           <td key={col.id} className="px-2 py-2 text-center">
                             <input
                               type="number"
-                              // Uncontrolled: keeps the chair's keystrokes (incl.
-                              // negatives/decimals) intact while totals update live.
                               defaultValue={d.scores[col.id] ?? ""}
-                              onChange={(e) =>
-                                edit(() =>
-                                  setScore(
-                                    user,
-                                    active.id,
-                                    d.id,
-                                    col.id,
-                                    e.target.value === ""
-                                      ? null
-                                      : Number(e.target.value)
-                                  )
-                                )
-                              }
+                              onChange={(e) => edit(() => setScore(active.id, d.id, col.id, e.target.value === "" ? null : Number(e.target.value)))}
                               aria-label={`${d.name} — ${col.label}`}
                               placeholder="0"
                               className="no-spin w-16 rounded-lg border border-navy-200 px-2 py-1.5 text-center text-sm focus:border-navy-500 focus:outline-none focus:ring-1 focus:ring-navy-500/30"
@@ -588,22 +421,11 @@ export default function CommitteeBoard() {
                           </td>
                         ))}
                         <td className="px-4 py-2.5 text-center">
-                          <span className="badge bg-gold-100 text-gold-700">
-                            {totalFor(active, d)}
-                          </span>
+                          <span className="badge bg-gold-100 text-gold-700">{totalFor(active, d)}</span>
                         </td>
                         <td className="px-2 py-2.5 text-right">
                           <button
-                            onClick={() => {
-                              if (
-                                window.confirm(
-                                  `Remove ${d.name} from this committee?`
-                                )
-                              )
-                                edit(() =>
-                                  removeDelegate(user, active.id, d.id)
-                                );
-                            }}
+                            onClick={() => { if (window.confirm(`Remove ${d.name} from this committee?`)) edit(() => removeDelegate(active.id, d.id)); }}
                             aria-label="Remove delegate"
                             className="rounded-lg p-1.5 text-navy-300 hover:bg-red-50 hover:text-red-600"
                           >
@@ -623,9 +445,7 @@ export default function CommitteeBoard() {
               className="mt-4 flex flex-wrap items-end gap-3 rounded-2xl border-2 border-dashed border-navy-200 bg-navy-50/40 p-4"
             >
               <div className="min-w-[180px] flex-1">
-                <label htmlFor="committee-del-name" className="label">
-                  Delegate name
-                </label>
+                <label htmlFor="committee-del-name" className="label">Delegate name</label>
                 <input
                   id="committee-del-name"
                   value={delName}
@@ -635,9 +455,7 @@ export default function CommitteeBoard() {
                 />
               </div>
               <div className="min-w-[160px] flex-1">
-                <label htmlFor="committee-del-portfolio" className="label">
-                  Portfolio / country
-                </label>
+                <label htmlFor="committee-del-portfolio" className="label">Portfolio / country</label>
                 <input
                   id="committee-del-portfolio"
                   value={delPortfolio}
@@ -646,11 +464,7 @@ export default function CommitteeBoard() {
                   className="input-field !py-2.5"
                 />
               </div>
-              <button
-                type="submit"
-                disabled={!delName.trim()}
-                className="btn-gold !py-2.5"
-              >
+              <button type="submit" disabled={!delName.trim()} className="btn-gold !py-2.5">
                 <PlusIcon width={16} height={16} /> Add delegate
               </button>
             </form>

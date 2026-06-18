@@ -117,3 +117,116 @@ export function toDetail(u: UserDoc): AccountDetail {
     groupId: u.groupId,
   };
 }
+
+/* ────────────────────────── Experience collection ────────────────────────── */
+
+export interface ExperienceDoc {
+  id: string;
+  owner: string;
+  conference: string;
+  date: string;
+  committee: string;
+  portfolio: string;
+  placement: string;
+  notes?: string;
+  scorecardName?: string;
+  scorecardDataUrl?: string;
+  createdAt: number;
+}
+
+export async function experiencesCol(): Promise<Collection<ExperienceDoc>> {
+  return (await getDb()).collection<ExperienceDoc>("experiences");
+}
+
+/* ──────────────────────────── Q&A collection ─────────────────────────────── */
+
+export interface QuestionDoc {
+  id: string;
+  author: string;
+  text: string;
+  visibility: "public" | "private";
+  createdAt: number;
+  answer?: string;
+  answeredBy?: string;
+  answeredAt?: number;
+}
+
+export async function questionsCol(): Promise<Collection<QuestionDoc>> {
+  return (await getDb()).collection<QuestionDoc>("questions");
+}
+
+/* ─────────────────────────── Committee collection ───────────────────────── */
+
+export interface ScoreColumn { id: string; label: string; }
+export interface CommitteeDelegate {
+  id: string; name: string; portfolio?: string; scores: Record<string, number>;
+}
+export interface SpeakerEntry { id: string; name: string; done: boolean; }
+
+export interface CommitteeDoc {
+  id: string;
+  chair: string;
+  name: string;
+  conference?: string;
+  columns: ScoreColumn[];
+  delegates: CommitteeDelegate[];
+  speakers: SpeakerEntry[];
+  currentSpeakerId?: string;
+  published: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export async function committeesCol(): Promise<Collection<CommitteeDoc>> {
+  return (await getDb()).collection<CommitteeDoc>("committees");
+}
+
+/* ─────────────────────────── Contact collection ─────────────────────────── */
+
+export interface MessageDoc {
+  id: string; name: string; email: string; message: string; createdAt: number;
+}
+
+export async function messagesCol(): Promise<Collection<MessageDoc>> {
+  return (await getDb()).collection<MessageDoc>("messages");
+}
+
+/* ──────────────────────────── Content collections ───────────────────────── */
+
+export interface ResourceDoc {
+  id: string; title: string; type: string; format: string;
+  desc: string; url?: string; seeded?: boolean;
+}
+
+export interface VideoDoc {
+  id: string; title: string; category: string;
+  level: "Beginner" | "Intermediate" | "Advanced";
+  duration: string; url?: string; seeded?: boolean;
+}
+
+export async function resourcesCol(): Promise<Collection<ResourceDoc>> {
+  return (await getDb()).collection<ResourceDoc>("resources");
+}
+
+export async function videosCol(): Promise<Collection<VideoDoc>> {
+  return (await getDb()).collection<VideoDoc>("videos");
+}
+
+/* ──────────────────────────── Documents collection ──────────────────────── */
+
+export interface ResolutionDocDb {
+  id: string; owner: string; title: string; html: string;
+  createdAt: number; updatedAt: number;
+}
+
+export async function documentsCol(): Promise<Collection<ResolutionDocDb>> {
+  return (await getDb()).collection<ResolutionDocDb>("documents");
+}
+
+/* ──────────────────────────── Settings collection ───────────────────────── */
+
+export interface SettingDoc { key: string; value: unknown; }
+
+export async function settingsCol(): Promise<Collection<SettingDoc>> {
+  return (await getDb()).collection<SettingDoc>("settings");
+}

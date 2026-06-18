@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { getAccounts, type AccountDetail } from "@/lib/auth";
 import { getAllExperiences, type MunExperience } from "@/lib/experience";
-import { getPointsMap, scoreForExperiences } from "@/lib/ranking";
+import { getRankingSettings, scoreForExperiences, DEFAULT_POINTS } from "@/lib/ranking";
 import { SparkleIcon } from "./icons";
 
 interface Message {
@@ -28,7 +28,6 @@ function firstNameOf(a: AccountDetail): string {
   return (a.profile.fullName?.trim().split(/\s+/)[0] || a.email.split("@")[0]).toLowerCase();
 }
 
-/** Pulls the most likely search term out of a natural-language query. */
 function extractTerm(input: string): string {
   const emailMatch = input.match(/[^\s@]+@[^\s@]+\.[^\s@]+/);
   if (emailMatch) return emailMatch[0].toLowerCase();
@@ -51,21 +50,13 @@ function summarize(
     .sort((x, y) => (x.date < y.date ? 1 : -1));
   const score = scoreForExperiences(mine, points);
   const roleLabel =
-    a.role === "owner"
-      ? "Owner"
-      : a.role === "admin"
-      ? "Admin"
-      : a.role === "chair"
-      ? "Chair"
-      : "Delegate";
+    a.role === "owner" ? "Owner" :
+    a.role === "admin" ? "Admin" :
+    a.role === "chair" ? "Chair" : "Delegate";
 
-  const lines = [
-    `📋 ${nameOf(a)} — ${roleLabel}`,
-    `Email: ${a.email}`,
-  ];
+  const lines = [`📋 ${nameOf(a)} — ${roleLabel}`, `Email: ${a.email}`];
   const classBits = [a.profile.className && `Class ${a.profile.className}`, a.profile.section && `Section ${a.profile.section}`]
-    .filter(Boolean)
-    .join(" · ");
+    .filter(Boolean).join(" · ");
   if (classBits) lines.push(classBits);
   if (a.profile.phone) lines.push(`Phone: ${a.profile.phone}`);
   lines.push("");
@@ -85,15 +76,21 @@ function summarize(
 export default function ProfileBot() {
   const [accounts, setAccounts] = useState<AccountDetail[]>([]);
   const [experiences, setExperiences] = useState<MunExperience[]>([]);
+  const [points, setPoints] = useState<Record<string, number>>(DEFAULT_POINTS);
   const [messages, setMessages] = useState<Message[]>([{ from: "bot", text: GREETING }]);
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    getAccounts()
-      .then(setAccounts)
-      .catch(() => setAccounts([]));
-    setExperiences(getAllExperiences());
+    Promise.all([
+      getAccounts().catch(() => [] as AccountDetail[]),
+      getAllExperiences().catch(() => [] as MunExperience[]),
+      getRankingSettings().catch(() => ({ points: DEFAULT_POINTS, manualOrder: [] })),
+    ]).then(([accts, exps, settings]) => {
+      setAccounts(accts);
+      setExperiences(exps);
+      setPoints(settings.points);
+    });
   }, []);
 
   useEffect(() => {
@@ -101,7 +98,6 @@ export default function ProfileBot() {
   }, [messages]);
 
   function reply(query: string): string {
-    const points = getPointsMap();
     const raw = query.trim().toLowerCase();
 
     if (!raw) return "Type a delegate's email or first name.";
@@ -160,7 +156,7 @@ export default function ProfileBot() {
         </span>
         <div>
           <div className="font-bold text-navy-900">Delegate Lookup</div>
-          <div className="text-xs text-navy-500">Search profiles by email or name · offline</div>
+          <div className="text-xs text-navy-500">Search profiles by email or name</div>
         </div>
       </div>
 
