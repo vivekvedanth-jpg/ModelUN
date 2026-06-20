@@ -30,13 +30,14 @@ export default function CommitteeView() {
     }).catch(() => {});
   }
 
+  // Poll faster when a vote is active so results appear quickly after the timer ends.
+  const hasLiveVote = committees.some((c) => c.vote && !c.vote.closed);
   useEffect(() => {
     load();
-    // Poll every 5s so delegates see live votes, chat and session changes.
-    const interval = setInterval(load, 5000);
+    const interval = setInterval(load, hasLiveVote ? 2000 : 5000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [hasLiveVote]);
 
   const active = useMemo(
     () => committees.find((c) => c.id === activeId) ?? null,
@@ -216,11 +217,11 @@ export default function CommitteeView() {
                             </td>
                             <td className="px-4 py-2.5">
                               <div className="font-semibold text-navy-900">
-                                {d.name}
+                                {d.portfolio || d.name}
                               </div>
                               {d.portfolio && (
                                 <div className="text-xs text-navy-500">
-                                  {d.portfolio}
+                                  {d.name}
                                 </div>
                               )}
                             </td>

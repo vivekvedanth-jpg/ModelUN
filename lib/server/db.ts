@@ -175,8 +175,15 @@ export interface VoteRecord {
   durationSec: number;
   /** True once the chair closes it early (it also auto-closes when time runs out). */
   closed: boolean;
-  /** voter email (lowercased) -> their choice. */
-  ballots: Record<string, "yes" | "no">;
+  /**
+   * One entry per voter. Stored as an array (not an email-keyed object) because
+   * MongoDB treats dots in field names as path separators, which corrupts emails.
+   */
+  ballots: VoteBallot[];
+}
+export interface VoteBallot {
+  email: string; // lowercased voter email
+  choice: "yes" | "no";
 }
 
 /** A simple committee chat message. toEmail undefined = visible to the whole committee. */

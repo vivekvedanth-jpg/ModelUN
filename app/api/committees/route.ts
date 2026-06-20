@@ -53,9 +53,9 @@ function serialize(committee: CommitteeDoc, me: UserDoc) {
   let vote: unknown = undefined;
   if (committee.vote) {
     const v = committee.vote;
-    const ballots = v.ballots ?? {};
-    const yes = Object.values(ballots).filter((x) => x === "yes").length;
-    const no = Object.values(ballots).filter((x) => x === "no").length;
+    const ballots = Array.isArray(v.ballots) ? v.ballots : [];
+    const yes = ballots.filter((b) => b.choice === "yes").length;
+    const no = ballots.filter((b) => b.choice === "no").length;
     const closed = voteClosed(v);
     const showTally = manager || closed;
     vote = {
@@ -65,8 +65,8 @@ function serialize(committee: CommitteeDoc, me: UserDoc) {
       startedAt: v.startedAt,
       durationSec: v.durationSec,
       closed: v.closed,
-      voterCount: Object.keys(ballots).length,
-      myVote: ballots[myEmail] ?? null,
+      voterCount: ballots.length,
+      myVote: ballots.find((b) => lc(b.email) === myEmail)?.choice ?? null,
       tally: showTally ? { yes, no, total: yes + no } : null,
     };
   }
@@ -361,7 +361,7 @@ export async function PATCH(req: NextRequest) {
         startedAt: now,
         durationSec,
         closed: false,
-        ballots: {},
+        ballots: [],
       };
       await col.updateOne({ id }, { $set: { vote, updatedAt: now } });
       break;
@@ -372,10 +372,41 @@ export async function PATCH(req: NextRequest) {
       const v = committee.vote;
       if (!v) return fail("There's no active vote.");
       if (voteClosed(v)) return fail("Voting has closed.");
+      const email = lc(me.email);
+      // Legacy votes stored ballots as an object; normalise to an array first so
+      // $pull/$push don't fail on a non-array field.
+      if (!Array.isArray(v.ballots)) {
+        await col.updateOne({ id }, { $set: { "vote.ballots": [] } });
+      }
+      // Atomic per-voter: drop any prior ballot from this email, then add the new
+      // one. Scoped to this email so concurrent voters never clobber each other.
+      await col.updateOne({ id }, { $pull: { "vote.ballots": { email } } });
       await col.updateOne(
         { id },
-        { $set: { [`vote.ballots.${lc(me.email)}`]: choice, updatedAt: now } }
+        { $push: { "vote.ballots": { email, choice } }, $set: { updatedAt: now } }
       );
+      break;
+    }
+    case "extend_vote": {
+      const v = committee.vote;
+      if (!v) return fail("There's no active vote.");
+      if (v.closed) return fail("That vote is already closed.");
+      let addSec = Math.round(Number(body.addSec));
+      if (!Number.isFinite(addSec) || addSec <= 0) addSec = 30;
+      addSec = Math.min(MAX_VOTE_SECONDS, addSec);
+      const deadline = v.startedAt + v.durationSec * 1000;
+      if (now >= deadline) {
+        // Timer already lapsed (but not manually closed) — reopen for addSec more.
+        await col.updateOne(
+          { id },
+          { $set: { "vote.startedAt": now, "vote.durationSec": addSec, updatedAt: now } }
+        );
+      } else {
+        await col.updateOne(
+          { id },
+          { $set: { "vote.durationSec": v.durationSec + addSec, updatedAt: now } }
+        );
+      }
       break;
     }
     case "close_vote": {

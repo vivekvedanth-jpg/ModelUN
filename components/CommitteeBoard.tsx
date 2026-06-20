@@ -59,6 +59,8 @@ export default function CommitteeBoard() {
   const [roster, setRoster] = useState<RosterAccount[]>([]);
   const [acctEmail, setAcctEmail] = useState("");
   const [acctPortfolio, setAcctPortfolio] = useState("");
+  const [acctSearch, setAcctSearch] = useState("");
+  const [acctDropOpen, setAcctDropOpen] = useState(false);
 
   // Local drafts for the committee name/conference so typing never races the
   // server (the previous version saved on every keystroke and dropped letters).
@@ -72,23 +74,40 @@ export default function CommitteeBoard() {
     [committees, activeId]
   );
 
+  // Latest committees, readable inside the polling loop without re-subscribing.
+  const committeesRef = useRef<Committee[]>([]);
+  committeesRef.current = committees;
+
   useEffect(() => {
     if (!user) return;
-    const refresh = () => {
-      getCommitteesForUser().then((list) => {
-        setCommittees(list);
-        setActiveId((cur) =>
-          cur && list.some((c) => c.id === cur) ? cur : list[0]?.id ?? null
-        );
-      }).catch(() => {});
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    // Self-scheduling poll: chairs see votes/chat live. Speeds up to 2s while a
+    // vote is open so a delegate's ballot shows in the count almost instantly.
+    // Editable fields (name/conference drafts, score inputs) are local/
+    // uncontrolled, so a refresh won't clobber anything the chair is typing.
+    const tick = () => {
+      getCommitteesForUser()
+        .then((list) => {
+          if (cancelled) return;
+          setCommittees(list);
+          setActiveId((cur) =>
+            cur && list.some((c) => c.id === cur) ? cur : list[0]?.id ?? null
+          );
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (cancelled) return;
+          const live = committeesRef.current.some((c) => c.vote && !c.vote.closed);
+          timer = setTimeout(tick, live ? 2000 : 5000);
+        });
     };
-    refresh();
+    tick();
     getRoster().then(setRoster).catch(() => {});
-    // Poll so chairs see delegates' votes and chat arrive live. Editable fields
-    // (name/conference drafts, score inputs) are local/uncontrolled, so a refresh
-    // won't clobber anything the chair is typing.
-    const interval = setInterval(refresh, 5000);
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [user]);
 
   // Reset the name/conference drafts only when switching committees.
@@ -130,8 +149,17 @@ export default function CommitteeBoard() {
     const acct = roster.find((a) => a.email === acctEmail);
     await edit(() => addDelegate(active.id, { email: acctEmail, name: acct?.name, portfolio: acctPortfolio }));
     setAcctEmail("");
+    setAcctSearch("");
     setAcctPortfolio("");
   }
+
+  const filteredAccounts = useMemo(() => {
+    const q = acctSearch.toLowerCase();
+    if (!q) return availableAccounts;
+    return availableAccounts.filter(
+      (a) => a.name.toLowerCase().includes(q) || a.email.toLowerCase().includes(q)
+    );
+  }, [availableAccounts, acctSearch]);
 
   /** Runs an async committee mutation and folds the updated committee back in. */
   async function edit(fn: () => Promise<Committee>) {
@@ -417,11 +445,11 @@ export default function CommitteeBoard() {
                     <li key={d.id} className={`flex items-center gap-3 px-5 py-3 ${i < 3 ? "bg-gold-50/50" : ""}`}>
                       <span className="w-8 flex-shrink-0 text-center text-lg font-bold text-navy-900">{medal(i)}</span>
                       <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-navy-800 text-xs font-bold text-white">
-                        {(d.name || "?").slice(0, 1).toUpperCase()}
+                        {(d.portfolio || d.name || "?").slice(0, 1).toUpperCase()}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <div className="truncate font-semibold text-navy-900">{d.name}</div>
-                        {d.portfolio && <div className="truncate text-xs text-navy-500">{d.portfolio}</div>}
+                        <div className="truncate font-semibold text-navy-900">{d.portfolio || d.name}</div>
+                        {d.portfolio && <div className="truncate text-xs text-navy-500">{d.name}</div>}
                       </div>
                       <span className="badge bg-gold-100 text-gold-700">{total} pts</span>
                     </li>
@@ -487,14 +515,14 @@ export default function CommitteeBoard() {
                       <tr key={d.id} className="hover:bg-navy-50/40">
                         <td className="sticky left-0 z-10 bg-white px-4 py-2.5">
                           <div className="flex items-center gap-1.5">
-                            <span className="font-semibold text-navy-900">{d.name}</span>
+                            <span className="font-semibold text-navy-900">{d.portfolio || d.name}</span>
                             {!d.email && (
                               <span className="badge bg-navy-100 px-1.5 py-0.5 text-[10px] text-navy-500" title="No linked account — can't vote or chat">
                                 no login
                               </span>
                             )}
                           </div>
-                          {d.portfolio && <div className="text-xs text-navy-500">{d.portfolio}</div>}
+                          <div className="text-xs text-navy-500">{d.portfolio ? d.name : ""}</div>
                         </td>
                         {active.columns.map((col) => (
                           <td key={col.id} className="px-2 py-2 text-center">
@@ -533,22 +561,52 @@ export default function CommitteeBoard() {
               <div>
                 <span className="label">Add a delegate from their account</span>
                 <div className="flex flex-wrap items-end gap-3">
-                  <div className="min-w-[200px] flex-1">
-                    <select
-                      value={acctEmail}
-                      onChange={(e) => setAcctEmail(e.target.value)}
-                      aria-label="Delegate account"
-                      className="input-field !py-2.5"
-                    >
-                      <option value="">
-                        {availableAccounts.length ? "Select a delegate account…" : "No accounts available to add"}
-                      </option>
-                      {availableAccounts.map((a) => (
-                        <option key={a.email} value={a.email}>
-                          {a.name} ({a.email}){a.role !== "normal" ? ` · ${a.role}` : ""}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="relative min-w-[200px] flex-1">
+                    {acctEmail ? (
+                      <div className="flex items-center gap-2 rounded-xl border border-navy-300 bg-white px-3 py-2.5 text-sm">
+                        <span className="flex-1 font-medium text-navy-900">
+                          {roster.find((a) => a.email === acctEmail)?.name ?? acctEmail}
+                          <span className="ml-1.5 text-xs text-navy-500">({acctEmail})</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => { setAcctEmail(""); setAcctSearch(""); }}
+                          className="text-navy-400 hover:text-red-600"
+                          aria-label="Clear selection"
+                        >
+                          <CloseIcon width={14} height={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <input
+                          value={acctSearch}
+                          onChange={(e) => { setAcctSearch(e.target.value); setAcctDropOpen(true); }}
+                          onFocus={() => setAcctDropOpen(true)}
+                          onBlur={() => setTimeout(() => setAcctDropOpen(false), 150)}
+                          placeholder={availableAccounts.length ? "Search by name or email…" : "No accounts available to add"}
+                          disabled={!availableAccounts.length}
+                          aria-label="Delegate account search"
+                          className="input-field !py-2.5"
+                        />
+                        {acctDropOpen && filteredAccounts.length > 0 && (
+                          <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-navy-200 bg-white shadow-lg">
+                            {filteredAccounts.map((a) => (
+                              <li key={a.email}>
+                                <button
+                                  type="button"
+                                  onMouseDown={() => { setAcctEmail(a.email); setAcctSearch(""); setAcctDropOpen(false); }}
+                                  className="flex w-full flex-col px-3 py-2.5 text-left hover:bg-navy-50"
+                                >
+                                  <span className="font-medium text-navy-900">{a.name}</span>
+                                  <span className="text-xs text-navy-500">{a.email}{a.role !== "normal" ? ` · ${a.role}` : ""}</span>
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </>
+                    )}
                   </div>
                   <div className="min-w-[150px] flex-1">
                     <input

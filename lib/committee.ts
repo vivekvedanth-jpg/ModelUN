@@ -227,6 +227,10 @@ export async function castVote(id: string, choice: "yes" | "no"): Promise<Commit
   return patch({ id, action: "cast_vote", choice });
 }
 
+export async function extendVote(id: string, addSec: number): Promise<Committee> {
+  return patch({ id, action: "extend_vote", addSec });
+}
+
 export async function closeVote(id: string): Promise<Committee> {
   return patch({ id, action: "close_vote" });
 }

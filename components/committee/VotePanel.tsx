@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   startVote,
   castVote,
+  extendVote,
   closeVote,
   clearVote,
   voteDecided,
@@ -197,10 +198,28 @@ export default function VotePanel({
       )}
 
       {/* Live status while open */}
+      {!decided && canManage && tally && (
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="rounded-xl bg-emerald-50 px-4 py-2.5 text-center">
+            <div className="text-2xl font-bold tabular-nums text-emerald-700">{tally.yes}</div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-emerald-600">Yes</div>
+          </div>
+          <div className="rounded-xl bg-red-50 px-4 py-2.5 text-center">
+            <div className="text-2xl font-bold tabular-nums text-red-700">{tally.no}</div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-red-600">No</div>
+          </div>
+        </div>
+      )}
       {!decided && (
         <p className="mt-3 text-center text-sm text-navy-500">
-          {vote.voterCount} {vote.voterCount === 1 ? "vote" : "votes"} cast
-          {canManage && tally ? ` · ${tally.yes} yes / ${tally.no} no` : ""}
+          {vote.voterCount} {vote.voterCount === 1 ? "vote" : "votes"} cast so far
+        </p>
+      )}
+
+      {/* Waiting for server tally after timer expires */}
+      {decided && !tally && (
+        <p className="mt-4 text-center text-sm text-navy-500 animate-pulse">
+          Calculating results…
         </p>
       )}
 
@@ -232,11 +251,19 @@ export default function VotePanel({
 
       {/* Chair controls */}
       {canManage && (
-        <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-navy-100 pt-4">
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-navy-100 pt-4">
           {!decided && (
-            <button onClick={() => run(() => closeVote(committee.id))} disabled={busy} className="btn-ghost !py-2 text-sm">
-              Close voting now
-            </button>
+            <>
+              <button onClick={() => run(() => extendVote(committee.id, 30))} disabled={busy} className="btn-ghost !py-2 text-sm">
+                +30s
+              </button>
+              <button onClick={() => run(() => extendVote(committee.id, 60))} disabled={busy} className="btn-ghost !py-2 text-sm">
+                +1 min
+              </button>
+              <button onClick={() => run(() => closeVote(committee.id))} disabled={busy} className="btn-ghost !py-2 text-sm">
+                Close voting now
+              </button>
+            </>
           )}
           <button onClick={() => run(() => clearVote(committee.id))} disabled={busy} className="btn-ghost !py-2 text-sm text-red-600">
             Clear vote
