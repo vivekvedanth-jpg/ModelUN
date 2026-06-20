@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "./AuthProvider";
 import { isOwner } from "@/lib/auth";
 import {
   getCommitteesForUser,
+  getRoster,
   createCommittee,
   renameCommittee,
   deleteCommittee,
@@ -23,7 +24,11 @@ import {
   clearSpeakers,
   setPublished,
   type Committee,
+  type RosterAccount,
 } from "@/lib/committee";
+import SessionBanner from "./committee/SessionBanner";
+import VotePanel from "./committee/VotePanel";
+import ChatPanel from "./committee/ChatPanel";
 import {
   ScaleIcon,
   PlusIcon,
@@ -51,6 +56,16 @@ export default function CommitteeBoard() {
   const [delName, setDelName] = useState("");
   const [delPortfolio, setDelPortfolio] = useState("");
   const [speakerName, setSpeakerName] = useState("");
+  const [roster, setRoster] = useState<RosterAccount[]>([]);
+  const [acctEmail, setAcctEmail] = useState("");
+  const [acctPortfolio, setAcctPortfolio] = useState("");
+
+  // Local drafts for the committee name/conference so typing never races the
+  // server (the previous version saved on every keystroke and dropped letters).
+  const [nameDraft, setNameDraft] = useState("");
+  const [confDraft, setConfDraft] = useState("");
+  const nameTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const confTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const active = useMemo(
     () => committees.find((c) => c.id === activeId) ?? null,
@@ -59,13 +74,64 @@ export default function CommitteeBoard() {
 
   useEffect(() => {
     if (!user) return;
-    getCommitteesForUser().then((list) => {
-      setCommittees(list);
-      setActiveId((cur) =>
-        cur && list.some((c) => c.id === cur) ? cur : list[0]?.id ?? null
-      );
-    }).catch(() => {});
+    const refresh = () => {
+      getCommitteesForUser().then((list) => {
+        setCommittees(list);
+        setActiveId((cur) =>
+          cur && list.some((c) => c.id === cur) ? cur : list[0]?.id ?? null
+        );
+      }).catch(() => {});
+    };
+    refresh();
+    getRoster().then(setRoster).catch(() => {});
+    // Poll so chairs see delegates' votes and chat arrive live. Editable fields
+    // (name/conference drafts, score inputs) are local/uncontrolled, so a refresh
+    // won't clobber anything the chair is typing.
+    const interval = setInterval(refresh, 5000);
+    return () => clearInterval(interval);
   }, [user]);
+
+  // Reset the name/conference drafts only when switching committees.
+  useEffect(() => {
+    setNameDraft(active?.name ?? "");
+    setConfDraft(active?.conference ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId]);
+
+  const applyUpdate = (u: Committee) =>
+    setCommittees((prev) => prev.map((c) => (c.id === u.id ? u : c)));
+
+  function onNameChange(v: string) {
+    setNameDraft(v);
+    if (!active) return;
+    const cid = active.id;
+    if (nameTimer.current) clearTimeout(nameTimer.current);
+    nameTimer.current = setTimeout(() => { edit(() => renameCommittee(cid, { name: v })); }, 500);
+  }
+
+  function onConfChange(v: string) {
+    setConfDraft(v);
+    if (!active) return;
+    const cid = active.id;
+    if (confTimer.current) clearTimeout(confTimer.current);
+    confTimer.current = setTimeout(() => { edit(() => renameCommittee(cid, { conference: v })); }, 500);
+  }
+
+  const availableAccounts = useMemo(
+    () =>
+      roster.filter(
+        (a) => !active?.delegates.some((d) => d.email && d.email.toLowerCase() === a.email.toLowerCase())
+      ),
+    [roster, active]
+  );
+
+  async function handleAddAccount() {
+    if (!active || !acctEmail) return;
+    const acct = roster.find((a) => a.email === acctEmail);
+    await edit(() => addDelegate(active.id, { email: acctEmail, name: acct?.name, portfolio: acctPortfolio }));
+    setAcctEmail("");
+    setAcctPortfolio("");
+  }
 
   /** Runs an async committee mutation and folds the updated committee back in. */
   async function edit(fn: () => Promise<Committee>) {
@@ -196,14 +262,14 @@ export default function CommitteeBoard() {
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="min-w-0 flex-1">
                 <input
-                  value={active.name}
-                  onChange={(e) => edit(() => renameCommittee(active.id, { name: e.target.value }))}
+                  value={nameDraft}
+                  onChange={(e) => onNameChange(e.target.value)}
                   placeholder="Committee name (e.g. UNSC)"
                   className="w-full bg-transparent font-serif text-2xl font-bold text-navy-900 outline-none placeholder:text-silver-500"
                 />
                 <input
-                  value={active.conference ?? ""}
-                  onChange={(e) => edit(() => renameCommittee(active.id, { conference: e.target.value }))}
+                  value={confDraft}
+                  onChange={(e) => onConfChange(e.target.value)}
                   placeholder="Conference / session (optional)"
                   className="mt-1 w-full bg-transparent text-sm text-navy-600 outline-none placeholder:text-silver-500"
                 />
@@ -225,6 +291,20 @@ export default function CommitteeBoard() {
                 <TrashIcon width={14} height={14} /> Delete committee
               </button>
             </div>
+          </div>
+
+          {/* Session status */}
+          <SessionBanner committee={active} canManage onUpdate={applyUpdate} />
+
+          {/* Voting + chat */}
+          <div className="grid gap-6 lg:grid-cols-2">
+            <VotePanel committee={active} canManage onUpdate={applyUpdate} />
+            <ChatPanel
+              committee={active}
+              meEmail={user?.email ?? ""}
+              canManage
+              onUpdate={applyUpdate}
+            />
           </div>
 
           {/* Speaker list */}
@@ -375,8 +455,9 @@ export default function CommitteeBoard() {
                       <th key={col.id} className="px-2 py-2 font-semibold">
                         <div className="group flex items-center justify-center gap-0.5">
                           <input
-                            value={col.label}
-                            onChange={(e) => edit(() => renameColumn(active.id, col.id, e.target.value))}
+                            key={col.id}
+                            defaultValue={col.label}
+                            onBlur={(e) => { if (e.target.value !== col.label) edit(() => renameColumn(active.id, col.id, e.target.value)); }}
                             aria-label="Category name"
                             className="w-24 rounded-md bg-transparent px-1.5 py-1 text-center text-xs font-bold uppercase tracking-wide text-navy-700 hover:bg-white focus:bg-white focus:outline-none focus:ring-1 focus:ring-navy-300"
                           />
@@ -405,7 +486,14 @@ export default function CommitteeBoard() {
                     active.delegates.map((d) => (
                       <tr key={d.id} className="hover:bg-navy-50/40">
                         <td className="sticky left-0 z-10 bg-white px-4 py-2.5">
-                          <div className="font-semibold text-navy-900">{d.name}</div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-navy-900">{d.name}</span>
+                            {!d.email && (
+                              <span className="badge bg-navy-100 px-1.5 py-0.5 text-[10px] text-navy-500" title="No linked account — can't vote or chat">
+                                no login
+                              </span>
+                            )}
+                          </div>
                           {d.portfolio && <div className="text-xs text-navy-500">{d.portfolio}</div>}
                         </td>
                         {active.columns.map((col) => (
@@ -440,34 +528,73 @@ export default function CommitteeBoard() {
             </div>
 
             {/* Add delegate */}
-            <form
-              onSubmit={handleAddDelegate}
-              className="mt-4 flex flex-wrap items-end gap-3 rounded-2xl border-2 border-dashed border-navy-200 bg-navy-50/40 p-4"
-            >
-              <div className="min-w-[180px] flex-1">
-                <label htmlFor="committee-del-name" className="label">Delegate name</label>
-                <input
-                  id="committee-del-name"
-                  value={delName}
-                  onChange={(e) => setDelName(e.target.value)}
-                  placeholder="Delegate name"
-                  className="input-field !py-2.5"
-                />
+            <div className="mt-4 space-y-3 rounded-2xl border-2 border-dashed border-navy-200 bg-navy-50/40 p-4">
+              {/* Primary: add an existing delegate account (these can vote & chat) */}
+              <div>
+                <span className="label">Add a delegate from their account</span>
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="min-w-[200px] flex-1">
+                    <select
+                      value={acctEmail}
+                      onChange={(e) => setAcctEmail(e.target.value)}
+                      aria-label="Delegate account"
+                      className="input-field !py-2.5"
+                    >
+                      <option value="">
+                        {availableAccounts.length ? "Select a delegate account…" : "No accounts available to add"}
+                      </option>
+                      {availableAccounts.map((a) => (
+                        <option key={a.email} value={a.email}>
+                          {a.name} ({a.email}){a.role !== "normal" ? ` · ${a.role}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="min-w-[150px] flex-1">
+                    <input
+                      value={acctPortfolio}
+                      onChange={(e) => setAcctPortfolio(e.target.value)}
+                      placeholder="Portfolio / country (optional)"
+                      aria-label="Portfolio for account delegate"
+                      className="input-field !py-2.5"
+                    />
+                  </div>
+                  <button onClick={handleAddAccount} disabled={!acctEmail} className="btn-gold !py-2.5">
+                    <PlusIcon width={16} height={16} /> Add delegate
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-navy-500">
+                  Delegates must have an account first (create them in Admin). Only added delegates can join, vote and chat.
+                </p>
               </div>
-              <div className="min-w-[160px] flex-1">
-                <label htmlFor="committee-del-portfolio" className="label">Portfolio / country</label>
-                <input
-                  id="committee-del-portfolio"
-                  value={delPortfolio}
-                  onChange={(e) => setDelPortfolio(e.target.value)}
-                  placeholder="e.g. France (optional)"
-                  className="input-field !py-2.5"
-                />
-              </div>
-              <button type="submit" disabled={!delName.trim()} className="btn-gold !py-2.5">
-                <PlusIcon width={16} height={16} /> Add delegate
-              </button>
-            </form>
+
+              {/* Secondary: a scoring-only entry with no login */}
+              <form onSubmit={handleAddDelegate} className="flex flex-wrap items-end gap-3 border-t border-navy-200/70 pt-3">
+                <div className="min-w-[180px] flex-1">
+                  <label htmlFor="committee-del-name" className="label">…or add a name to score only (no login)</label>
+                  <input
+                    id="committee-del-name"
+                    value={delName}
+                    onChange={(e) => setDelName(e.target.value)}
+                    placeholder="Delegate name"
+                    className="input-field !py-2.5"
+                  />
+                </div>
+                <div className="min-w-[150px] flex-1">
+                  <input
+                    id="committee-del-portfolio"
+                    value={delPortfolio}
+                    onChange={(e) => setDelPortfolio(e.target.value)}
+                    placeholder="e.g. France (optional)"
+                    aria-label="Portfolio"
+                    className="input-field !py-2.5"
+                  />
+                </div>
+                <button type="submit" disabled={!delName.trim()} className="btn-ghost !py-2.5">
+                  <PlusIcon width={16} height={16} /> Add name
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       )}

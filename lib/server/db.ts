@@ -160,8 +160,42 @@ export async function questionsCol(): Promise<Collection<QuestionDoc>> {
 export interface ScoreColumn { id: string; label: string; }
 export interface CommitteeDelegate {
   id: string; name: string; portfolio?: string; scores: Record<string, number>;
+  /** Linked user account (lowercased email). Present when the delegate has a login. */
+  email?: string;
 }
 export interface SpeakerEntry { id: string; name: string; done: boolean; }
+
+/** A yes/no vote the chair runs (mod-caucus topic, resolution, etc.). */
+export type VoteThreshold = "simple" | "twothirds";
+export interface VoteRecord {
+  id: string;
+  title: string;
+  threshold: VoteThreshold;
+  startedAt: number;
+  durationSec: number;
+  /** True once the chair closes it early (it also auto-closes when time runs out). */
+  closed: boolean;
+  /** voter email (lowercased) -> their choice. */
+  ballots: Record<string, "yes" | "no">;
+}
+
+/** A simple committee chat message. toEmail undefined = visible to the whole committee. */
+export interface CommitteeMessage {
+  id: string;
+  authorEmail: string;
+  authorName: string;
+  toEmail?: string;
+  text: string;
+  createdAt: number;
+}
+
+/** "What's happening now" banner: unmod caucus, lunch break, etc. */
+export interface SessionStatus {
+  label: string;
+  startedAt: number;
+  /** Optional countdown length in seconds. */
+  durationSec?: number;
+}
 
 export interface CommitteeDoc {
   id: string;
@@ -173,6 +207,9 @@ export interface CommitteeDoc {
   speakers: SpeakerEntry[];
   currentSpeakerId?: string;
   published: boolean;
+  vote?: VoteRecord;
+  messages?: CommitteeMessage[];
+  session?: SessionStatus;
   createdAt: number;
   updatedAt: number;
 }

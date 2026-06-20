@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "./AuthProvider";
 import { getAllCommittees, totalFor, type Committee } from "@/lib/committee";
+import SessionBanner from "./committee/SessionBanner";
+import VotePanel from "./committee/VotePanel";
+import ChatPanel from "./committee/ChatPanel";
 import { ScaleIcon, MicIcon, CheckIcon } from "./icons";
 
 function medal(rank: number): string {
@@ -9,10 +13,11 @@ function medal(rank: number): string {
 }
 
 /**
- * Read-only committee view for delegates: shows the chair's speaker list live,
- * and the full scorecard once the chair publishes it.
+ * Committee view for delegates: live session status, votes and chat, the
+ * speaker list, and the full scorecard once the chair publishes it.
  */
 export default function CommitteeView() {
+  const { user } = useAuth();
   const [committees, setCommittees] = useState<Committee[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -27,8 +32,8 @@ export default function CommitteeView() {
 
   useEffect(() => {
     load();
-    // Poll every 15s so the delegate sees speaker list updates without a manual refresh.
-    const interval = setInterval(load, 15000);
+    // Poll every 5s so delegates see live votes, chat and session changes.
+    const interval = setInterval(load, 5000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -37,6 +42,9 @@ export default function CommitteeView() {
     () => committees.find((c) => c.id === activeId) ?? null,
     [committees, activeId]
   );
+
+  const applyUpdate = (u: Committee) =>
+    setCommittees((prev) => prev.map((c) => (c.id === u.id ? u : c)));
 
   const standings = useMemo(() => {
     if (!active) return [];
@@ -53,8 +61,8 @@ export default function CommitteeView() {
         </span>
         <h2 className="text-xl font-bold text-navy-900">No committee yet</h2>
         <p className="max-w-sm text-sm text-navy-600">
-          When your chair sets up a committee, the speaker list — and your scores
-          once they&apos;re released — will appear here.
+          Once your chair adds you to a committee, its session status, votes,
+          chat and scores will appear here.
         </p>
         <button onClick={load} className="btn-ghost mt-2">
           Refresh
@@ -62,6 +70,8 @@ export default function CommitteeView() {
       </div>
     );
   }
+
+  const canManage = active?.canManage ?? false;
 
   return (
     <div className="space-y-8">
@@ -95,6 +105,20 @@ export default function CommitteeView() {
             {active.conference && (
               <p className="mt-1 text-sm text-navy-600">{active.conference}</p>
             )}
+          </div>
+
+          {/* Session status */}
+          <SessionBanner committee={active} canManage={canManage} onUpdate={applyUpdate} />
+
+          {/* Voting + chat */}
+          <div className="grid gap-6 lg:grid-cols-2">
+            <VotePanel committee={active} canManage={canManage} onUpdate={applyUpdate} />
+            <ChatPanel
+              committee={active}
+              meEmail={user?.email ?? ""}
+              canManage={canManage}
+              onUpdate={applyUpdate}
+            />
           </div>
 
           {/* Speaker list */}

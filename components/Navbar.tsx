@@ -19,8 +19,21 @@ const NORMAL_LINKS = [
   { href: "/editor", label: "Editor" },
 ];
 
-/** Extra link only the admin sees. */
-const ADMIN_EXTRA = { href: "/admin", label: "Admin" };
+/**
+ * Admins & the owner: like normal users, but the "Committee" link points at the
+ * management board (scoring, votes, chat) instead of the read-only delegate view.
+ */
+const ADMIN_LINKS = [
+  { href: "/", label: "Home" },
+  { href: "/videos", label: "Videos" },
+  { href: "/resources", label: "Resources" },
+  { href: "/timer", label: "Timer" },
+  { href: "/committee", label: "Committee" },
+  { href: "/model-diplomat", label: "MUN Assistant" },
+  { href: "/experience", label: "My MUNs" },
+  { href: "/editor", label: "Editor" },
+  { href: "/admin", label: "Admin" },
+];
 
 /** Focused link set for chairs (committee-scoring staff). */
 const CHAIR_LINKS = [
@@ -55,7 +68,7 @@ export default function Navbar() {
     : user.role === "chair"
     ? CHAIR_LINKS
     : isAdmin(user.role)
-    ? [...NORMAL_LINKS, ADMIN_EXTRA]
+    ? ADMIN_LINKS
     : NORMAL_LINKS;
 
   const isActive = (href: string) =>

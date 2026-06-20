@@ -32,7 +32,7 @@ export default function Protected({ role, children }: ProtectedProps) {
     (!role ||
       user.role === role ||
       (role === "admin" && isAdmin(user.role)) ||
-      (role === "chair" && (user.role === "chair" || isOwner(user))) ||
+      (role === "chair" && (user.role === "chair" || isAdmin(user.role))) ||
       (role === "owner" && isOwner(user)));
 
   useEffect(() => {

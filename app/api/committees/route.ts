@@ -1,11 +1,18 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { committeesCol, type CommitteeDoc, type ScoreColumn, type CommitteeDelegate, type SpeakerEntry } from "@/lib/server/db";
-import { getSessionUser, isOwnerDoc, fail } from "@/lib/server/session";
+import {
+  committeesCol, usersCol,
+  type CommitteeDoc, type ScoreColumn, type CommitteeDelegate, type SpeakerEntry,
+  type VoteRecord, type VoteThreshold, type CommitteeMessage, type SessionStatus,
+  type UserDoc,
+} from "@/lib/server/db";
+import { getSessionUser, isAdminDoc, isOwnerDoc, fail } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DEFAULT_COLUMN_LABELS = ["GSL", "Mod Caucus", "Unmod Caucus", "Resolution", "Diplomacy"];
+const MAX_VOTE_SECONDS = 120;
+const MAX_MESSAGES = 200;
 
 function makeId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -15,28 +22,126 @@ function defaultColumns(): ScoreColumn[] {
   return DEFAULT_COLUMN_LABELS.map((label) => ({ id: makeId(), label }));
 }
 
-function canManage(me: { email: string; role: string }, committee: CommitteeDoc): boolean {
-  return isOwnerDoc(me as never) || committee.chair.toLowerCase() === me.email.toLowerCase();
+function lc(s: string): string {
+  return s.trim().toLowerCase();
 }
 
-/** GET — list committees for the current user. */
+/** Chairs manage their own committee; admins and the owner manage every one. */
+function canManage(me: UserDoc, committee: CommitteeDoc): boolean {
+  return isAdminDoc(me) || lc(committee.chair) === lc(me.email);
+}
+
+/** A member can vote and chat: anyone managing it, or a linked delegate. */
+function isMember(me: UserDoc, committee: CommitteeDoc): boolean {
+  if (canManage(me, committee)) return true;
+  return committee.delegates.some((d) => d.email && lc(d.email) === lc(me.email));
+}
+
+function voteClosed(v: VoteRecord, now = Date.now()): boolean {
+  return v.closed || now >= v.startedAt + v.durationSec * 1000;
+}
+
+/**
+ * Shape a committee for a given viewer: chairs/admins see everything; delegates
+ * get filtered messages, no raw ballots, and scores only once published.
+ */
+function serialize(committee: CommitteeDoc, me: UserDoc) {
+  const manager = canManage(me, committee);
+  const myEmail = lc(me.email);
+
+  // Vote view — hide other people's ballots from delegates.
+  let vote: unknown = undefined;
+  if (committee.vote) {
+    const v = committee.vote;
+    const ballots = v.ballots ?? {};
+    const yes = Object.values(ballots).filter((x) => x === "yes").length;
+    const no = Object.values(ballots).filter((x) => x === "no").length;
+    const closed = voteClosed(v);
+    const showTally = manager || closed;
+    vote = {
+      id: v.id,
+      title: v.title,
+      threshold: v.threshold,
+      startedAt: v.startedAt,
+      durationSec: v.durationSec,
+      closed: v.closed,
+      voterCount: Object.keys(ballots).length,
+      myVote: ballots[myEmail] ?? null,
+      tally: showTally ? { yes, no, total: yes + no } : null,
+    };
+  }
+
+  // Messages — delegates only see committee-wide ones plus their own DMs.
+  const allMsgs = committee.messages ?? [];
+  const messages = manager
+    ? allMsgs
+    : allMsgs.filter(
+        (m) => !m.toEmail || lc(m.authorEmail) === myEmail || lc(m.toEmail) === myEmail
+      );
+
+  // Scores stay private until published (for non-managers).
+  const delegates =
+    manager || committee.published
+      ? committee.delegates
+      : committee.delegates.map((d) => ({ ...d, scores: {} }));
+
+  return {
+    id: committee.id,
+    chair: committee.chair,
+    name: committee.name,
+    conference: committee.conference,
+    columns: committee.columns,
+    delegates,
+    speakers: committee.speakers,
+    currentSpeakerId: committee.currentSpeakerId,
+    published: committee.published,
+    vote,
+    messages,
+    session: committee.session,
+    createdAt: committee.createdAt,
+    updatedAt: committee.updatedAt,
+    canManage: manager,
+  };
+}
+
+/** GET — committees for the current user, or ?accounts=1 for the chair's roster. */
 export async function GET(req: NextRequest) {
   const me = await getSessionUser(req);
   if (!me) return fail("You must be signed in.", 401);
-  if (me.role !== "chair" && !isOwnerDoc(me)) return fail("Chairs and owners only.", 403);
+
+  // Roster of addable accounts (for chairs/admins/owner adding delegates).
+  if (req.nextUrl.searchParams.get("accounts") === "1") {
+    if (me.role !== "chair" && !isAdminDoc(me)) return fail("Not allowed.", 403);
+    const docs = await (await usersCol()).find({ role: { $ne: "owner" } }).toArray();
+    const accounts = docs
+      .map((u) => ({
+        email: u.email,
+        name: u.profile?.fullName?.trim() || u.email.split("@")[0],
+        role: u.role,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return NextResponse.json({ accounts });
+  }
 
   const col = await committeesCol();
-  const filter = isOwnerDoc(me) ? {} : { chair: new RegExp(`^${me.email}$`, "i") };
-  const docs = await col.find(filter).toArray();
+  let docs: CommitteeDoc[];
+  if (isAdminDoc(me)) {
+    docs = await col.find({}).toArray();
+  } else if (me.role === "chair") {
+    docs = await col.find({ chair: new RegExp(`^${me.email}$`, "i") }).toArray();
+  } else {
+    // A delegate sees only the committees they've been added to.
+    docs = await col.find({ "delegates.email": new RegExp(`^${me.email}$`, "i") }).toArray();
+  }
   docs.sort((a, b) => b.updatedAt - a.updatedAt);
-  return NextResponse.json({ committees: docs });
+  return NextResponse.json({ committees: docs.map((c) => serialize(c, me)) });
 }
 
-/** POST — create a committee. */
+/** POST — create a committee (chairs/admins/owner). */
 export async function POST(req: NextRequest) {
   const me = await getSessionUser(req);
   if (!me) return fail("You must be signed in.", 401);
-  if (me.role !== "chair" && !isOwnerDoc(me)) return fail("Chairs and owners only.", 403);
+  if (me.role !== "chair" && !isAdminDoc(me)) return fail("Chairs and owners only.", 403);
 
   let body: { name?: string } = {};
   try { body = await req.json(); } catch { /* empty body ok */ }
@@ -50,12 +155,13 @@ export async function POST(req: NextRequest) {
     columns: defaultColumns(),
     delegates: [],
     speakers: [],
+    messages: [],
     published: false,
     createdAt: now,
     updatedAt: now,
   };
   await (await committeesCol()).insertOne(doc);
-  return NextResponse.json({ committee: doc }, { status: 201 });
+  return NextResponse.json({ committee: serialize(doc, me) }, { status: 201 });
 }
 
 /** PATCH — action-based mutation on a committee. */
@@ -74,7 +180,15 @@ export async function PATCH(req: NextRequest) {
   const col = await committeesCol();
   const committee = await col.findOne({ id });
   if (!committee) return fail("Committee not found.", 404);
-  if (!canManage(me, committee)) return fail("Permission denied.", 403);
+
+  // Members (delegates) may cast votes and send messages; everything else is
+  // chair/admin-only management.
+  const memberActions = new Set(["cast_vote", "send_message"]);
+  if (memberActions.has(action)) {
+    if (!isMember(me, committee)) return fail("You're not in this committee.", 403);
+  } else {
+    if (!canManage(me, committee)) return fail("Permission denied.", 403);
+  }
 
   const now = Date.now();
 
@@ -102,7 +216,6 @@ export async function PATCH(req: NextRequest) {
     }
     case "remove_column": {
       const { columnId } = body as { columnId: string };
-      // Pull column and clear its scores from every delegate.
       await col.updateOne(
         { id },
         {
@@ -110,7 +223,6 @@ export async function PATCH(req: NextRequest) {
           $set: { updatedAt: now },
         }
       );
-      // Remove the score key from every delegate's scores object.
       const fresh = await col.findOne({ id });
       if (fresh) {
         const delegates: CommitteeDelegate[] = fresh.delegates.map((d) => {
@@ -124,12 +236,22 @@ export async function PATCH(req: NextRequest) {
     }
     case "add_delegate": {
       const name = (body.name as string | undefined)?.trim();
-      if (!name) return fail("Delegate name is required.");
+      const email = body.email ? lc(body.email as string) : undefined;
+      if (!name && !email) return fail("Delegate name or account is required.");
+
+      if (email) {
+        const account = await (await usersCol()).findOne({ email: new RegExp(`^${email}$`, "i") });
+        if (!account) return fail("No account exists with that email — create the delegate's account first.");
+        const dupe = committee.delegates.some((d) => d.email && lc(d.email) === email);
+        if (dupe) return fail("That delegate is already in this committee.");
+      }
+
       const delegate: CommitteeDelegate = {
         id: makeId(),
-        name,
+        name: name || email!.split("@")[0],
         portfolio: (body.portfolio as string | undefined)?.trim() || undefined,
         scores: {},
+        email,
       };
       await col.updateOne({ id }, { $push: { delegates: delegate }, $set: { updatedAt: now } });
       break;
@@ -223,12 +345,98 @@ export async function PATCH(req: NextRequest) {
       await col.updateOne({ id }, { $set: { published: !!body.published, updatedAt: now } });
       break;
     }
+
+    /* ── Voting ── */
+    case "start_vote": {
+      const title = (body.title as string | undefined)?.trim();
+      if (!title) return fail("Give the vote a title.");
+      const threshold: VoteThreshold = body.threshold === "twothirds" ? "twothirds" : "simple";
+      let durationSec = Math.round(Number(body.durationSec));
+      if (!Number.isFinite(durationSec) || durationSec <= 0) durationSec = 30;
+      durationSec = Math.min(MAX_VOTE_SECONDS, Math.max(5, durationSec));
+      const vote: VoteRecord = {
+        id: makeId(),
+        title,
+        threshold,
+        startedAt: now,
+        durationSec,
+        closed: false,
+        ballots: {},
+      };
+      await col.updateOne({ id }, { $set: { vote, updatedAt: now } });
+      break;
+    }
+    case "cast_vote": {
+      const choice = body.choice === "yes" ? "yes" : body.choice === "no" ? "no" : null;
+      if (!choice) return fail("Choose yes or no.");
+      const v = committee.vote;
+      if (!v) return fail("There's no active vote.");
+      if (voteClosed(v)) return fail("Voting has closed.");
+      await col.updateOne(
+        { id },
+        { $set: { [`vote.ballots.${lc(me.email)}`]: choice, updatedAt: now } }
+      );
+      break;
+    }
+    case "close_vote": {
+      if (!committee.vote) break;
+      await col.updateOne({ id }, { $set: { "vote.closed": true, updatedAt: now } });
+      break;
+    }
+    case "clear_vote": {
+      await col.updateOne({ id }, { $unset: { vote: "" }, $set: { updatedAt: now } });
+      break;
+    }
+
+    /* ── Messaging ── */
+    case "send_message": {
+      const text = (body.text as string | undefined)?.trim();
+      if (!text) return fail("Message can't be empty.");
+      if (text.length > 1000) return fail("Message is too long.");
+      const toEmail = body.toEmail ? lc(body.toEmail as string) : undefined;
+      const message: CommitteeMessage = {
+        id: makeId(),
+        authorEmail: lc(me.email),
+        authorName: me.profile?.fullName?.trim() || me.email.split("@")[0],
+        toEmail,
+        text,
+        createdAt: now,
+      };
+      await col.updateOne(
+        { id },
+        {
+          $push: { messages: { $each: [message], $slice: -MAX_MESSAGES } },
+          $set: { updatedAt: now },
+        }
+      );
+      break;
+    }
+    case "clear_messages": {
+      await col.updateOne({ id }, { $set: { messages: [], updatedAt: now } });
+      break;
+    }
+
+    /* ── Session status ── */
+    case "set_session": {
+      const label = (body.label as string | undefined)?.trim();
+      if (!label) return fail("Name the session activity.");
+      let durationSec: number | undefined = Math.round(Number(body.durationSec));
+      if (!Number.isFinite(durationSec) || durationSec <= 0) durationSec = undefined;
+      const session: SessionStatus = { label, startedAt: now, durationSec };
+      await col.updateOne({ id }, { $set: { session, updatedAt: now } });
+      break;
+    }
+    case "clear_session": {
+      await col.updateOne({ id }, { $unset: { session: "" }, $set: { updatedAt: now } });
+      break;
+    }
+
     default:
       return fail(`Unknown action: ${action}`);
   }
 
   const updated = await col.findOne({ id });
-  return NextResponse.json({ committee: updated });
+  return NextResponse.json({ committee: updated ? serialize(updated, me) : null });
 }
 
 /** DELETE — remove a committee. */
