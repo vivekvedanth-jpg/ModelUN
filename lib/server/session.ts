@@ -61,8 +61,10 @@ export function canViewAllGroups(u: UserDoc): boolean {
 /** A Mongo filter for the accounts a given admin/owner is allowed to see. */
 export function visibleAccountsFilter(u: UserDoc): Record<string, unknown> {
   if (canViewAllGroups(u)) return {};
-  if (!u.groupId) return { email: u.email };
-  return { $or: [{ groupId: u.groupId }, { email: u.email }] };
+  // Group-scoped admins see their group and themselves — plus the Owner, whose
+  // profile (email, phone, MUNs) is visible to every admin.
+  if (!u.groupId) return { $or: [{ email: u.email }, { role: "owner" }] };
+  return { $or: [{ groupId: u.groupId }, { email: u.email }, { role: "owner" }] };
 }
 
 /** Small helper for JSON error responses. */

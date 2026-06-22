@@ -11,7 +11,7 @@ export default function Footer() {
               <GlobeIcon />
             </span>
             <span className="font-serif text-lg font-bold text-white">
-              Model<span className="text-gold-400">UN</span>
+              Let&apos;s <span className="text-gold-400">MUN</span>
             </span>
           </div>
           <p className="mt-4 max-w-xs text-sm leading-relaxed text-navy-200">
@@ -56,7 +56,7 @@ export default function Footer() {
 
       <div className="border-t border-navy-800">
         <div className="container-page flex flex-col items-center justify-between gap-3 py-5 text-xs text-navy-300 sm:flex-row">
-          <span>© {new Date().getFullYear()} ModelUN. Built for student diplomats.</span>
+          <span>© {new Date().getFullYear()} Let&apos;s MUN. Built for student diplomats.</span>
           <span>Phase 1 · Core Layout &amp; Authentication</span>
         </div>
       </div>

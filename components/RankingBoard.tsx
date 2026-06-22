@@ -18,12 +18,21 @@ function medal(rank: number): string {
   return rank === 0 ? "🥇" : rank === 1 ? "🥈" : rank === 2 ? "🥉" : `${rank + 1}`;
 }
 
+type RankFilter = "all" | "admins" | "delegates";
+
+const FILTERS: { value: RankFilter; label: string }[] = [
+  { value: "all", label: "Everyone" },
+  { value: "admins", label: "Admins & Owner" },
+  { value: "delegates", label: "Delegates only" },
+];
+
 export default function RankingBoard() {
   const [accounts, setAccounts] = useState<AccountDetail[]>([]);
   const [experiences, setExperiences] = useState<MunExperience[]>([]);
   const [points, setPoints] = useState<Record<string, number>>(DEFAULT_POINTS);
   const [order, setOrder] = useState<string[]>([]);
   const [notice, setNotice] = useState("");
+  const [filter, setFilter] = useState<RankFilter>("all");
 
   useEffect(() => {
     Promise.all([
@@ -42,6 +51,13 @@ export default function RankingBoard() {
     () => computeLeaderboard(accounts, experiences, points, order),
     [accounts, experiences, points, order]
   );
+
+  // Admins & owner are everyone who isn't a plain delegate (owner/admin/chair).
+  const visible = useMemo(() => {
+    if (filter === "admins") return leaderboard.filter((r) => r.role !== "normal");
+    if (filter === "delegates") return leaderboard.filter((r) => r.role === "normal");
+    return leaderboard;
+  }, [leaderboard, filter]);
 
   function updatePoint(placement: string, value: string) {
     const n = Number(value);
@@ -131,28 +147,51 @@ export default function RankingBoard() {
           <div>
             <h2 className="text-2xl font-bold text-navy-900">Leaderboard</h2>
             <p className="mt-1 text-navy-600">
-              {manual
+              {filter !== "all"
+                ? `Showing ${filter === "admins" ? "admins & owner" : "delegates"} only. Switch to Everyone to reorder.`
+                : manual
                 ? "Manually ordered. Use the arrows to rearrange, or reset to score order."
                 : "Ranked by total score. Use the arrows to set a custom order."}
             </p>
           </div>
-          {manual && (
+          {manual && filter === "all" && (
             <button onClick={resetOrder} className="btn-ghost !py-2">
               Reset to score order
             </button>
           )}
         </div>
 
+        {/* Filter: everyone / admins+owner / delegates */}
+        <div className="mt-4 inline-flex flex-wrap gap-1 rounded-xl border border-navy-100 bg-navy-50 p-1">
+          {FILTERS.map((f) => (
+            <button
+              key={f.value}
+              onClick={() => setFilter(f.value)}
+              className={`rounded-lg px-3.5 py-1.5 text-sm font-semibold transition-colors ${
+                filter === f.value
+                  ? "bg-white text-navy-900 shadow-sm"
+                  : "text-navy-600 hover:text-navy-900"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
         <div className="mt-6 overflow-hidden rounded-2xl border border-navy-100 bg-white">
-          {leaderboard.length === 0 ? (
+          {visible.length === 0 ? (
             <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
               <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-navy-50 text-navy-400">
                 <AwardIcon width={24} height={24} />
               </span>
-              <p className="font-semibold text-navy-800">No ranked delegates yet</p>
+              <p className="font-semibold text-navy-800">
+                {filter === "admins"
+                  ? "No ranked admins yet"
+                  : "No ranked delegates yet"}
+              </p>
               <p className="max-w-sm text-sm text-navy-500">
-                Once delegates log conferences in &quot;My MUNs&quot;, they&apos;ll appear
-                here ranked by score.
+                Once {filter === "admins" ? "admins" : "delegates"} log conferences in
+                &quot;My MUNs&quot;, they&apos;ll appear here ranked by score.
               </p>
             </div>
           ) : (
@@ -163,11 +202,13 @@ export default function RankingBoard() {
                   <th className="px-5 py-3 font-semibold">Delegate</th>
                   <th className="px-5 py-3 font-semibold">MUNs</th>
                   <th className="px-5 py-3 font-semibold">Score</th>
-                  <th className="px-5 py-3 text-right font-semibold">Reorder</th>
+                  {filter === "all" && (
+                    <th className="px-5 py-3 text-right font-semibold">Reorder</th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-navy-100">
-                {leaderboard.map((row, i) => (
+                {visible.map((row, i) => (
                   <tr key={row.email} className="hover:bg-navy-50/50">
                     <td className="px-5 py-3 text-lg font-bold text-navy-900">
                       {medal(i)}
@@ -201,26 +242,28 @@ export default function RankingBoard() {
                         {row.score} pts
                       </span>
                     </td>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => move(row.email, -1)}
-                          disabled={i === 0}
-                          aria-label="Move up"
-                          className="rounded-lg border border-navy-200 p-1.5 text-navy-700 hover:bg-navy-50 disabled:opacity-30"
-                        >
-                          <ArrowUpIcon width={14} height={14} />
-                        </button>
-                        <button
-                          onClick={() => move(row.email, 1)}
-                          disabled={i === leaderboard.length - 1}
-                          aria-label="Move down"
-                          className="rounded-lg border border-navy-200 p-1.5 text-navy-700 hover:bg-navy-50 disabled:opacity-30"
-                        >
-                          <ArrowDownIcon width={14} height={14} />
-                        </button>
-                      </div>
-                    </td>
+                    {filter === "all" && (
+                      <td className="px-5 py-3">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => move(row.email, -1)}
+                            disabled={i === 0}
+                            aria-label="Move up"
+                            className="rounded-lg border border-navy-200 p-1.5 text-navy-700 hover:bg-navy-50 disabled:opacity-30"
+                          >
+                            <ArrowUpIcon width={14} height={14} />
+                          </button>
+                          <button
+                            onClick={() => move(row.email, 1)}
+                            disabled={i === visible.length - 1}
+                            aria-label="Move down"
+                            className="rounded-lg border border-navy-200 p-1.5 text-navy-700 hover:bg-navy-50 disabled:opacity-30"
+                          >
+                            <ArrowDownIcon width={14} height={14} />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

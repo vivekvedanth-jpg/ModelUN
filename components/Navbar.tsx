@@ -93,7 +93,7 @@ export default function Navbar() {
             <GlobeIcon />
           </span>
           <span className="font-serif text-lg font-bold text-navy-900">
-            Model<span className="text-gold-600">UN</span>
+            Let&apos;s <span className="text-gold-600">MUN</span>
           </span>
         </Link>
 

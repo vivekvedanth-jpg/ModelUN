@@ -22,7 +22,7 @@ export default function AuthShell({ children }: { children: ReactNode }) {
             <GlobeIcon />
           </span>
           <span className="font-serif text-lg font-bold">
-            Model<span className="text-gold-400">UN</span>
+            Let&apos;s <span className="text-gold-400">MUN</span>
           </span>
         </Link>
 

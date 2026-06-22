@@ -18,7 +18,7 @@ const playfair = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  title: "ModelUN — Learn the Art of Diplomacy",
+  title: "Let's MUN — Learn the Art of Diplomacy",
   description:
     "A learning platform for student diplomats. Watch lessons, study resources, time your caucuses, and practice public speaking through Model United Nations.",
 };

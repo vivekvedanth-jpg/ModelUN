@@ -1,4 +1,4 @@
-# ModelUN — Learning Platform
+# Let's MUN — Learning Platform
 
 A Model United Nations learning web app built with **Next.js (App Router)**,
 **Tailwind CSS**, and a **mocked localStorage backend**.
@@ -190,4 +190,4 @@ moving the project to a non-iCloud location such as `~/Projects/mun-app`.
 - A live Model Diplomat powered by the Claude API.
 - Per-committee sessions, delegate rosters, and resolution editing.
 ```
-# ModelUN
+# Let's MUN

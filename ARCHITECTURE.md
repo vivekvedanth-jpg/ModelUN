@@ -1,4 +1,4 @@
-# ModelUN Platform — Architecture & Production Document
+# Let's MUN Platform — Architecture & Production Document
 
 > A learning platform for student diplomats: lessons, resources, caucus timers,
 > an AI practice partner, a resolution editor, delegate experience tracking, and
@@ -30,7 +30,7 @@
 
 ## 2. System overview
 
-ModelUN is a **Next.js 14 (App Router)** single-codebase web app. Almost the
+Let's MUN is a **Next.js 14 (App Router)** single-codebase web app. Almost the
 entire product runs **in the browser**: data is persisted to `localStorage`,
 and all business rules (auth, roles, permissions) execute client-side. This
 makes Phase 1 fast to build and zero-cost to host, at the deliberate expense of
