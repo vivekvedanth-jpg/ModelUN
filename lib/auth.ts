@@ -40,13 +40,7 @@ export const OWNER_EMAIL = "admin1@mun.app";
 /** Sentinel group id meaning "this admin can access every group". */
 export const ALL_GROUPS = "all";
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 /* -------------------------------- Pure helpers -------------------------------- */
-
-export function isValidEmail(email: string): boolean {
-  return EMAIL_RE.test(email.trim());
-}
 
 /** A friendly display name derived from an email (the part before the "@"). */
 export function displayName(user: User | null | undefined): string {
@@ -63,17 +57,6 @@ export function isAdmin(role: Role | undefined): boolean {
 export function isOwner(user: User | null | undefined): boolean {
   if (!user) return false;
   return user.role === "owner" || user.email.toLowerCase() === OWNER_EMAIL;
-}
-
-/** True for chair accounts (committee scorers). */
-export function isChair(role: Role | undefined): boolean {
-  return role === "chair";
-}
-
-/** True for anyone allowed into the committee-scoring area (chairs + owner). */
-export function canScoreCommittees(user: User | null | undefined): boolean {
-  if (!user) return false;
-  return user.role === "chair" || isOwner(user);
 }
 
 /** True if the user can see every group (the Owner, or an all-access admin). */
