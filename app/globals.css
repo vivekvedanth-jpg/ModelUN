@@ -106,6 +106,20 @@
 .doc-content ol {
   @apply my-2 list-decimal pl-6;
 }
+/* MUN nested-clause markers: 1. -> a. -> i. as clauses indent deeper. */
+.doc-content ol ol {
+  list-style-type: lower-alpha;
+}
+.doc-content ol ol ol {
+  list-style-type: lower-roman;
+}
+/* Operative clauses: a little breathing room between numbered items. */
+.doc-content ol.mun-operative > li {
+  @apply my-1.5;
+}
+.doc-content p.mun-pre {
+  @apply my-1.5;
+}
 .doc-content blockquote {
   @apply my-2 border-l-4 border-gold-300 pl-4 italic text-navy-600;
 }

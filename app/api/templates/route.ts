@@ -19,68 +19,58 @@ export interface DocTemplate {
 /** Built-in starting formats. Admins can override name/html per template. */
 const DEFAULT_TEMPLATES: DocTemplate[] = [
   {
-    id: "directive",
-    name: "Directive",
-    description: "Crisis directive — sponsors, type, and operative actions.",
-    html: `<h1>Directive</h1>
+    id: "position-paper",
+    name: "Position Paper",
+    description: "Country stance — background, position, and proposed solutions.",
+    html: `<h1>Position Paper</h1>
+<p><strong>Committee:</strong> </p>
+<p><strong>Country:</strong> </p>
+<p><strong>Delegate:</strong> </p>
+<p><strong>Topic:</strong> </p>
+<h2>Topic Background</h2>
+<p>Briefly summarise the issue and why it matters to the international community.</p>
+<h2>Country's Position</h2>
+<p>State your country's official stance, citing past actions, treaties, or votes.</p>
+<h2>Proposed Solutions</h2>
+<ul>
+<li>First proposed measure …</li>
+<li>Second proposed measure …</li>
+</ul>`,
+  },
+  {
+    id: "draft-resolution",
+    name: "Draft Resolution",
+    description: "Full resolution with preambulatory & auto-numbered operative clauses.",
+    html: `<h1>Draft Resolution</h1>
 <p><strong>Committee:</strong> </p>
 <p><strong>Sponsors:</strong> </p>
 <p><strong>Signatories:</strong> </p>
-<p><strong>Type:</strong> Public / Private / Communiqué</p>
-<h2>Operative Clauses</h2>
-<ol>
-<li><strong>Deploys</strong> … </li>
-<li><strong>Authorizes</strong> … </li>
-<li><strong>Requests</strong> … </li>
-</ol>`,
-  },
-  {
-    id: "resolution",
-    name: "Resolution",
-    description: "Full draft resolution with preambulatory & operative clauses.",
-    html: `<h1>Resolution</h1>
-<p><strong>FORUM:</strong> </p>
-<p><strong>QUESTION OF:</strong> </p>
-<p><strong>SUBMITTED BY:</strong> </p>
-<p><strong>CO-SUBMITTED BY:</strong> </p>
-<h2>Preambulatory Clauses</h2>
-<ul>
-<li><em>Recalling</em> … </li>
-<li><em>Deeply concerned</em> by … </li>
-<li><em>Noting with regret</em> … </li>
-<li><em>Bearing in mind</em> … </li>
-</ul>
-<h2>Operative Clauses</h2>
-<ol>
-<li><u>Calls upon</u> all member states to …
-<ol>
-<li>through the establishment of …;</li>
-<li>with particular regard to …;</li>
-</ol>
-</li>
-<li><u>Urges</u> … </li>
-<li><u>Requests</u> the Secretary-General to … </li>
-</ol>`,
-  },
-  {
-    id: "working-paper",
-    name: "Working Paper",
-    description: "Informal working paper to organise a bloc's ideas.",
-    html: `<h1>Working Paper</h1>
 <p><strong>Topic:</strong> </p>
-<p><strong>Authors / Bloc:</strong> </p>
-<h2>Problem Statement</h2>
-<ul>
-<li>… </li>
-</ul>
-<h2>Proposed Measures</h2>
-<ul>
-<li>… </li>
-</ul>
-<h2>Points for Further Discussion</h2>
-<ul>
-<li>… </li>
-</ul>`,
+<p><em>The General Assembly</em>,</p>
+<p class="mun-pre"><em>Recalling</em> its previous resolutions on the matter,</p>
+<p class="mun-pre"><em>Deeply concerned</em> by the ongoing situation,</p>
+<p class="mun-pre"><em>Noting with regret</em> the lack of coordinated action,</p>
+<ol class="mun-operative">
+<li><u><strong>Calls upon</strong></u> all member states to cooperate fully;</li>
+<li><u><strong>Urges</strong></u> the relevant agencies to provide assistance;</li>
+<li><u><strong>Requests</strong></u> the Secretary-General to report on progress.</li>
+</ol>`,
+  },
+  {
+    id: "crisis-directive",
+    name: "Crisis Directive",
+    description: "Crisis committee directive — sponsors, type, and operative actions.",
+    html: `<h1>Crisis Directive</h1>
+<p><strong>Committee:</strong> </p>
+<p><strong>From:</strong> </p>
+<p><strong>To:</strong> </p>
+<p><strong>Re:</strong> </p>
+<p><strong>Type:</strong> Public / Private / Communiqué</p>
+<ol class="mun-operative">
+<li><u><strong>Authorizes</strong></u> the deployment of … ;</li>
+<li><u><strong>Deploys</strong></u> the following assets … ;</li>
+<li><u><strong>Requests</strong></u> immediate confirmation from … .</li>
+</ol>`,
   },
 ];
 
