@@ -7,7 +7,7 @@
  * …) stay synchronous because they only read the already-loaded User object.
  */
 
-export type Role = "owner" | "admin" | "chair" | "normal";
+export type Role = "owner" | "admin" | "chair" | "normal" | "guest";
 
 /** The session shape exposed to the app (never includes the password). */
 export interface User {
@@ -15,6 +15,8 @@ export interface User {
   role: Role;
   /** Group id, the literal "all" for all-access admins, or undefined. */
   groupId?: string;
+  /** Guest accounts only: epoch ms after which the account is auto-deleted. */
+  expiresAt?: number;
 }
 
 /** Optional personal details a delegate can fill in from Settings. */
@@ -32,7 +34,11 @@ export interface AccountDetail {
   profile: Profile;
   createdAt: number;
   groupId?: string;
+  expiresAt?: number;
 }
+
+/** Default lifetime of a guest (temporary) account, in days. */
+export const GUEST_DEFAULT_DAYS = 7;
 
 /** The permanent owner's email (kept for display + the isOwner fallback). */
 export const OWNER_EMAIL = "admin1@mun.app";
@@ -51,6 +57,11 @@ export function displayName(user: User | null | undefined): string {
 /** True for any account that can reach admin areas (owner counts as admin). */
 export function isAdmin(role: Role | undefined): boolean {
   return role === "admin" || role === "owner";
+}
+
+/** True for temporary guest accounts (committee page + settings only). */
+export function isGuest(role: Role | undefined): boolean {
+  return role === "guest";
 }
 
 /** True only for the permanent Owner account. */
@@ -91,7 +102,12 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 function toUser(account: AccountDetail): User {
-  return { email: account.email, role: account.role, groupId: account.groupId };
+  return {
+    email: account.email,
+    role: account.role,
+    groupId: account.groupId,
+    expiresAt: account.expiresAt,
+  };
 }
 
 /** Authenticate; the server sets an httpOnly session cookie on success. */
@@ -137,22 +153,31 @@ export async function getAccounts(): Promise<AccountDetail[]> {
 export async function createAccount(
   email: string,
   password: string,
-  role: "admin" | "chair" | "normal",
-  groupId?: string
+  role: "admin" | "chair" | "normal" | "guest",
+  groupId?: string,
+  expiresAt?: number
 ): Promise<void> {
   await api("/api/accounts", {
     method: "POST",
-    body: JSON.stringify({ email, password, role, groupId }),
+    body: JSON.stringify({ email, password, role, groupId, expiresAt }),
   });
 }
 
 export async function setRole(
   email: string,
-  role: "admin" | "chair" | "normal"
+  role: "admin" | "chair" | "normal" | "guest"
 ): Promise<void> {
   await api("/api/accounts", {
     method: "PATCH",
     body: JSON.stringify({ email, role }),
+  });
+}
+
+/** Change a guest account's expiry timestamp (admins/owner). */
+export async function setExpiry(email: string, expiresAt: number): Promise<void> {
+  await api("/api/accounts", {
+    method: "PATCH",
+    body: JSON.stringify({ email, expiresAt }),
   });
 }
 

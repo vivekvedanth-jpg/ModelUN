@@ -94,6 +94,9 @@
 .doc-content h2 {
   @apply mb-2 mt-4 font-serif text-xl font-bold text-navy-900;
 }
+.doc-content h3 {
+  @apply mb-1.5 mt-3 font-serif text-lg font-bold text-navy-900;
+}
 .doc-content p {
   @apply my-2;
 }
@@ -102,6 +105,12 @@
 }
 .doc-content ol {
   @apply my-2 list-decimal pl-6;
+}
+.doc-content blockquote {
+  @apply my-2 border-l-4 border-gold-300 pl-4 italic text-navy-600;
+}
+.doc-content hr {
+  @apply my-4 border-t border-navy-200;
 }
 .doc-content a {
   @apply text-navy-700 underline;

@@ -4,7 +4,7 @@ import SettingsPanel from "@/components/SettingsPanel";
 
 export default function SettingsPage() {
   return (
-    <Protected>
+    <Protected allowGuest>
       <PageHeader
         eyebrow="Account"
         title="Settings"

@@ -7,11 +7,13 @@ import {
   createAccount,
   setRole,
   setGroup,
+  setExpiry,
   deleteAccount,
   isOwner,
   canViewAllGroups,
   getActorGroupId,
   ALL_GROUPS,
+  GUEST_DEFAULT_DAYS,
   type Role,
   type AccountDetail,
 } from "@/lib/auth";
@@ -30,7 +32,12 @@ import {
   ScaleIcon,
   AwardIcon,
   CalendarIcon,
+  ClockIcon,
 } from "./icons";
+
+/** The expiry durations offered when creating or extending a guest account. */
+const GUEST_DURATIONS = [3, 7, 14, 30] as const;
+const DAY_MS = 86_400_000;
 
 function roleBadgeClass(role: Role) {
   switch (role) {
@@ -40,6 +47,8 @@ function roleBadgeClass(role: Role) {
       return "bg-gold-100 text-gold-700";
     case "chair":
       return "bg-emerald-100 text-emerald-700";
+    case "guest":
+      return "bg-amber-100 text-amber-700";
     default:
       return "bg-navy-100 text-navy-700";
   }
@@ -52,7 +61,14 @@ function roleLabel(role: Role): string {
     ? "Admin"
     : role === "chair"
     ? "Chair"
+    : role === "guest"
+    ? "Guest"
     : "Delegate";
+}
+
+/** Whole days remaining until a timestamp (never negative). */
+function daysLeft(expiresAt: number): number {
+  return Math.max(0, Math.ceil((expiresAt - Date.now()) / DAY_MS));
 }
 
 export default function AccountManager() {
@@ -69,8 +85,11 @@ export default function AccountManager() {
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
   // Only the owner can create admins/chairs, so default to "normal" for everyone.
-  const [newRole, setNewRole] = useState<"admin" | "chair" | "normal">("normal");
+  const [newRole, setNewRole] = useState<"admin" | "chair" | "normal" | "guest">(
+    "normal"
+  );
   const [newGroup, setNewGroup] = useState("");
+  const [newGuestDays, setNewGuestDays] = useState(GUEST_DEFAULT_DAYS);
   const [groups, setGroups] = useState<Group[]>([]);
 
   // The owner + all-access admins choose groups; group-scoped admins cannot.
@@ -132,13 +151,16 @@ export default function AccountManager() {
   function handleCreate(e: FormEvent) {
     e.preventDefault();
     const groupArg = newRole === "chair" ? undefined : newGroup || undefined;
+    const expiresArg =
+      newRole === "guest" ? Date.now() + newGuestDays * DAY_MS : undefined;
     const created = newEmail.trim().toLowerCase();
     run(async () => {
-      await createAccount(newEmail, newPassword, newRole, groupArg);
+      await createAccount(newEmail, newPassword, newRole, groupArg, expiresArg);
       setNewEmail("");
       setNewPassword("");
       setNewRole("normal");
       setNewGroup("");
+      setNewGuestDays(GUEST_DEFAULT_DAYS);
     }, `Account "${created}" created.`);
   }
 
@@ -210,6 +232,20 @@ export default function AccountManager() {
               <button
                 type="button"
                 onClick={() => {
+                  setNewRole("guest");
+                  setNewGroup("");
+                }}
+                className={`badge px-3 py-1.5 ${
+                  newRole === "guest"
+                    ? "bg-amber-500 text-white"
+                    : "bg-navy-100 text-navy-700"
+                }`}
+              >
+                <ClockIcon width={14} height={14} /> Guest
+              </button>
+              <button
+                type="button"
+                onClick={() => {
                   setNewRole("chair");
                   setNewGroup("");
                 }}
@@ -248,6 +284,31 @@ export default function AccountManager() {
             )}
           </div>
 
+          {/* Guest expiry */}
+          {newRole === "guest" && (
+            <div className="mt-4">
+              <label htmlFor="guest-expiry" className="label">
+                Access expires
+              </label>
+              <select
+                id="guest-expiry"
+                value={newGuestDays}
+                onChange={(e) => setNewGuestDays(Number(e.target.value))}
+                className="input-field"
+              >
+                {GUEST_DURATIONS.map((d) => (
+                  <option key={d} value={d}>
+                    {d} days
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1.5 text-xs text-navy-500">
+                Guest accounts are for visiting delegates — they only see the
+                committee page and are deleted automatically when they expire.
+              </p>
+            </div>
+          )}
+
           {/* Group assignment */}
           {newRole !== "chair" && (
             <div className="mt-4">
@@ -262,7 +323,9 @@ export default function AccountManager() {
                     {newRole === "admin" && (
                       <option value={ALL_GROUPS}>All groups (full access)</option>
                     )}
-                    {newRole === "normal" && <option value="">No group</option>}
+                    {(newRole === "normal" || newRole === "guest") && (
+                      <option value="">No group</option>
+                    )}
                     {groups.map((g) => (
                       <option key={g.id} value={g.id}>
                         {g.name}
@@ -339,7 +402,7 @@ export default function AccountManager() {
                 const canDelete =
                   !targetIsOwner &&
                   !isSelf &&
-                  (owner || u.role === "normal");
+                  (owner || u.role === "normal" || u.role === "guest");
                 const exps = experiencesFor(u.email);
                 const isExpanded = expandedEmail === u.email;
                 const fullName = u.profile.fullName?.trim();
@@ -352,7 +415,7 @@ export default function AccountManager() {
                       <div className="flex items-center gap-3">
                         <span
                           className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                            u.role === "normal"
+                            u.role === "normal" || u.role === "guest"
                               ? "bg-navy-800 text-white"
                               : "bg-gold-500 text-navy-900"
                           }`}
@@ -388,6 +451,23 @@ export default function AccountManager() {
                         )}
                         {roleLabel(u.role)}
                       </span>
+                      {u.role === "guest" && u.expiresAt !== undefined && (
+                        <div
+                          className={`mt-1 flex items-center gap-1 text-xs ${
+                            u.expiresAt - Date.now() < DAY_MS
+                              ? "font-semibold text-red-600"
+                              : "text-navy-500"
+                          }`}
+                        >
+                          <ClockIcon width={12} height={12} />
+                          Expires{" "}
+                          {new Date(u.expiresAt).toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                          })}{" "}
+                          · {daysLeft(u.expiresAt)}d left
+                        </div>
+                      )}
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex flex-wrap items-center justify-end gap-2">
@@ -412,7 +492,8 @@ export default function AccountManager() {
                               const next = e.target.value as
                                 | "admin"
                                 | "chair"
-                                | "normal";
+                                | "normal"
+                                | "guest";
                               run(
                                 () => setRole(u.email, next),
                                 `${u.email} is now ${roleLabel(next)}.`
@@ -422,13 +503,45 @@ export default function AccountManager() {
                             className="rounded-lg border border-navy-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-navy-700 focus:border-navy-500 focus:outline-none"
                           >
                             <option value="normal">Delegate</option>
+                            <option value="guest">Guest</option>
                             <option value="chair">Chair</option>
                             <option value="admin">Admin</option>
                           </select>
                         )}
-                        {/* Assign a group — Owner only, for admins & delegates */}
+                        {/* Extend a guest's access — any admin */}
+                        {u.role === "guest" && (
+                          <select
+                            value=""
+                            onChange={(e) => {
+                              const days = Number(e.target.value);
+                              if (!days) return;
+                              run(
+                                () =>
+                                  setExpiry(
+                                    u.email,
+                                    Date.now() + days * DAY_MS
+                                  ),
+                                `Guest access for ${u.email} now expires in ${days} days.`
+                              );
+                            }}
+                            aria-label={`Extend guest access for ${u.email}`}
+                            className="rounded-lg border border-navy-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-navy-700 focus:border-navy-500 focus:outline-none"
+                          >
+                            <option value="" disabled>
+                              Extend…
+                            </option>
+                            {GUEST_DURATIONS.map((d) => (
+                              <option key={d} value={d}>
+                                {d} days
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {/* Assign a group — Owner only, for admins, delegates & guests */}
                         {owner &&
-                          (u.role === "admin" || u.role === "normal") && (
+                          (u.role === "admin" ||
+                            u.role === "normal" ||
+                            u.role === "guest") && (
                             <select
                               value={u.groupId ?? ""}
                               onChange={(e) =>

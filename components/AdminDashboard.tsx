@@ -15,6 +15,7 @@ import {
   ShieldIcon,
   ScaleIcon,
   AwardIcon,
+  DocumentIcon,
   ArrowRightIcon,
 } from "./icons";
 
@@ -89,9 +90,9 @@ export default function AdminDashboard() {
           <h2 className="text-2xl font-bold text-navy-900">Content management</h2>
           <p className="mt-1 text-navy-600">
             Publish new videos and resources, or remove existing ones from the{" "}
-            <a href="/videos" className="font-semibold underline">Videos</a>{" "}
+            <Link href="/videos" className="font-semibold underline">Videos</Link>{" "}
             and{" "}
-            <a href="/resources" className="font-semibold underline">Resources</a>{" "}
+            <Link href="/resources" className="font-semibold underline">Resources</Link>{" "}
             pages.
           </p>
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
@@ -146,7 +147,21 @@ export default function AdminDashboard() {
                 <ArrowRightIcon width={16} height={16} className="opacity-0 transition-opacity group-hover:opacity-100" />
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-navy-600">
-                Score awards, view the leaderboard, and arrange the rankings.
+                Score awards, rename awards, view the leaderboard, and arrange the rankings.
+              </p>
+            </Link>
+
+            <Link href="/admin/templates" className="card-hover group">
+              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-navy-50 text-navy-800">
+                <DocumentIcon width={24} height={24} />
+              </span>
+              <h3 className="mt-5 flex items-center gap-1.5 text-lg font-bold text-navy-900">
+                Document Templates
+                <ArrowRightIcon width={16} height={16} className="opacity-0 transition-opacity group-hover:opacity-100" />
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-navy-600">
+                Set the starting format delegates get for directives, resolutions,
+                and working papers in the Editor.
               </p>
             </Link>
 

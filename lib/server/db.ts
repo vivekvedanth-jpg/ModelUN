@@ -9,7 +9,7 @@
 import { MongoClient, type Db, type Collection } from "mongodb";
 import bcrypt from "bcryptjs";
 
-export type Role = "owner" | "admin" | "chair" | "normal";
+export type Role = "owner" | "admin" | "chair" | "normal" | "guest";
 
 export interface UserProfile {
   fullName?: string;
@@ -26,6 +26,8 @@ export interface UserDoc {
   /** A group id, the literal "all" for all-access admins, or undefined. */
   groupId?: string;
   createdAt: number;
+  /** Guest accounts only: epoch ms after which the account is auto-deleted. */
+  expiresAt?: number;
 }
 
 export interface GroupDoc {
@@ -106,6 +108,7 @@ export interface AccountDetail {
   profile: UserProfile;
   createdAt: number;
   groupId?: string;
+  expiresAt?: number;
 }
 
 export function toDetail(u: UserDoc): AccountDetail {
@@ -115,8 +118,31 @@ export function toDetail(u: UserDoc): AccountDetail {
     profile: u.profile ?? {},
     createdAt: u.createdAt,
     groupId: u.groupId,
+    expiresAt: u.expiresAt,
   };
 }
+
+/**
+ * Canonical award placements. Stored verbatim on experiences; admins can give
+ * them custom display names via the "award_names" settings key, but the
+ * canonical strings are what's persisted and scored.
+ */
+export const PLACEMENTS = [
+  "Best Delegate",
+  "Outstanding Delegate",
+  "Honorable Mention",
+  "Special Mention",
+  "Verbal Mention",
+  "Participant",
+  "Other / None",
+] as const;
+
+/** Placements that count as "awards" (podium finishes). */
+export const AWARD_PLACEMENTS = [
+  "Best Delegate",
+  "Outstanding Delegate",
+  "Honorable Mention",
+] as const;
 
 /* ────────────────────────── Experience collection ────────────────────────── */
 
@@ -186,6 +212,12 @@ export interface VoteBallot {
   choice: "yes" | "no";
 }
 
+/** One person's emoji reaction to a chat message. */
+export interface MessageReaction {
+  emoji: string;
+  email: string; // lowercased reactor email
+}
+
 /** A simple committee chat message. toEmail undefined = visible to the whole committee. */
 export interface CommitteeMessage {
   id: string;
@@ -194,6 +226,9 @@ export interface CommitteeMessage {
   toEmail?: string;
   text: string;
   createdAt: number;
+  /** True for chair/admin announcements (highlighted in the chat). */
+  announcement?: boolean;
+  reactions?: MessageReaction[];
 }
 
 /** "What's happening now" banner: unmod caucus, lunch break, etc. */
@@ -223,6 +258,31 @@ export interface CommitteeDoc {
 
 export async function committeesCol(): Promise<Collection<CommitteeDoc>> {
   return (await getDb()).collection<CommitteeDoc>("committees");
+}
+
+/* ────────────────────────── Committee files collection ───────────────────── */
+
+/**
+ * A document the chair/admins share with a committee (RoP, format guides…).
+ * Stored inline as a base64 data URL, like experience scorecards. Kept in its
+ * own collection so big files never push the committee doc toward Mongo's
+ * 16 MB document cap.
+ */
+export interface CommitteeFileDoc {
+  id: string;
+  committeeId: string;
+  name: string;
+  mime: string;
+  /** Decoded size in bytes (approximate, derived from the data URL). */
+  size: number;
+  dataUrl: string;
+  uploadedBy: string; // lowercased uploader email
+  uploaderName: string;
+  createdAt: number;
+}
+
+export async function committeeFilesCol(): Promise<Collection<CommitteeFileDoc>> {
+  return (await getDb()).collection<CommitteeFileDoc>("committee_files");
 }
 
 /* ─────────────────────────── Contact collection ─────────────────────────── */

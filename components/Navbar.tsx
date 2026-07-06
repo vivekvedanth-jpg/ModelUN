@@ -44,6 +44,12 @@ const CHAIR_LINKS = [
   { href: "/committee", label: "Committee" },
 ];
 
+/** Temporary guest accounts only get the committee page (plus Settings). */
+const GUEST_LINKS = [
+  { href: "/", label: "Home" },
+  { href: "/committee-view", label: "Committee" },
+];
+
 function Avatar({ name, admin }: { name: string; admin: boolean }) {
   return (
     <span
@@ -65,6 +71,8 @@ export default function Navbar() {
   // Decide which links to show based on auth state + role.
   const links = !user
     ? [{ href: "/", label: "Home" }]
+    : user.role === "guest"
+    ? GUEST_LINKS
     : user.role === "chair"
     ? CHAIR_LINKS
     : isAdmin(user.role)
@@ -137,6 +145,8 @@ export default function Navbar() {
                     className={`badge ${
                       user.role === "chair"
                         ? "bg-emerald-100 text-emerald-700"
+                        : user.role === "guest"
+                        ? "bg-navy-100 text-navy-600"
                         : "bg-gold-100 text-gold-700"
                     }`}
                   >
@@ -144,6 +154,8 @@ export default function Navbar() {
                       ? "Owner"
                       : user.role === "chair"
                       ? "Chair"
+                      : user.role === "guest"
+                      ? "Guest"
                       : "Admin"}
                   </span>
                 )}
@@ -203,6 +215,11 @@ export default function Navbar() {
                     {isAdmin(user.role) && (
                       <span className="badge bg-gold-100 text-gold-700">
                         {user.role === "owner" ? "Owner" : "Admin"}
+                      </span>
+                    )}
+                    {user.role === "guest" && (
+                      <span className="badge bg-navy-100 text-navy-600">
+                        Guest
                       </span>
                     )}
                   </div>

@@ -9,6 +9,7 @@ import {
   updateProfile,
   getMyAccount,
   isAdmin,
+  isGuest,
   isOwner,
 } from "@/lib/auth";
 import {
@@ -19,6 +20,7 @@ import {
   CrownIcon,
   UsersIcon,
   CalendarIcon,
+  ClockIcon,
 } from "./icons";
 
 function Feedback({ error, notice }: { error: string; notice: string }) {
@@ -64,6 +66,7 @@ export default function SettingsPanel() {
   const [profileError, setProfileError] = useState("");
   const [profileNotice, setProfileNotice] = useState("");
   const [joinedAt, setJoinedAt] = useState<number | undefined>(undefined);
+  const [expiresAt, setExpiresAt] = useState<number | undefined>(user?.expiresAt);
 
   // Load the saved profile from the backend once we know who's signed in.
   useEffect(() => {
@@ -76,6 +79,7 @@ export default function SettingsPanel() {
       setSection(acct.profile.section ?? "");
       setPhone(acct.profile.phone ?? "");
       setJoinedAt(acct.createdAt);
+      setExpiresAt(acct.expiresAt);
     });
     return () => {
       active = false;
@@ -88,7 +92,16 @@ export default function SettingsPanel() {
     ? "Owner"
     : isAdmin(user.role)
     ? "Admin"
+    : isGuest(user.role)
+    ? "Guest"
     : "Delegate";
+
+  const guest = isGuest(user.role);
+  const guestExpiry = expiresAt ?? user.expiresAt;
+  const guestDaysLeft =
+    guestExpiry !== undefined
+      ? Math.max(0, Math.ceil((guestExpiry - Date.now()) / 86_400_000))
+      : undefined;
 
   async function handleEmailChange(e: FormEvent) {
     e.preventDefault();
@@ -138,6 +151,41 @@ export default function SettingsPanel() {
 
   return (
     <div className="space-y-8">
+      {/* Guest expiry notice */}
+      {guest && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5">
+          <div className="flex items-start gap-3">
+            <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+              <ClockIcon width={22} height={22} />
+            </span>
+            <div>
+              <h2 className="text-lg font-bold text-amber-900">
+                Temporary account
+              </h2>
+              <p className="mt-1 text-sm text-amber-800">
+                {guestExpiry !== undefined ? (
+                  <>
+                    This guest account expires on{" "}
+                    <span className="font-semibold">
+                      {new Date(guestExpiry).toLocaleDateString(undefined, {
+                        day: "numeric",
+                        month: "long",
+                        year: "numeric",
+                      })}
+                    </span>{" "}
+                    ({guestDaysLeft} {guestDaysLeft === 1 ? "day" : "days"}{" "}
+                    left).
+                  </>
+                ) : (
+                  <>This guest account is temporary.</>
+                )}{" "}
+                An organiser can extend it from the admin panel.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Account summary */}
       <div className="card">
         <div className="flex items-center gap-3">

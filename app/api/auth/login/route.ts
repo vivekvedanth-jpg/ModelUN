@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { usersCol, toDetail } from "@/lib/server/db";
-import { setSessionCookie, fail } from "@/lib/server/session";
+import { setSessionCookie, isGuestExpired, fail } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,6 +36,13 @@ export async function POST(req: NextRequest) {
 
   if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
     return fail("Invalid email or password.", 401);
+  }
+
+  // Expired guest accounts self-destruct on their next sign-in attempt.
+  if (isGuestExpired(user)) {
+    const users = await usersCol();
+    await users.deleteOne({ email: user.email });
+    return fail("This temporary account has expired.", 401);
   }
 
   let res: NextResponse;

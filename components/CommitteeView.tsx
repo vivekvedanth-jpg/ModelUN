@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "./AuthProvider";
-import { getAllCommittees, totalFor, type Committee } from "@/lib/committee";
+import { getAllCommittees, totalFor, voteDecided, type Committee } from "@/lib/committee";
 import SessionBanner from "./committee/SessionBanner";
 import VotePanel from "./committee/VotePanel";
 import ChatPanel from "./committee/ChatPanel";
+import FilesPanel from "./committee/FilesPanel";
 import { ScaleIcon, MicIcon, CheckIcon } from "./icons";
 
 function medal(rank: number): string {
@@ -30,8 +31,9 @@ export default function CommitteeView() {
     }).catch(() => {});
   }
 
-  // Poll faster when a vote is active so results appear quickly after the timer ends.
-  const hasLiveVote = committees.some((c) => c.vote && !c.vote.closed);
+  // Poll faster only while a vote is genuinely live (not merely un-closed after
+  // its timer lapsed), so results appear quickly without polling forever.
+  const hasLiveVote = committees.some((c) => c.vote && !voteDecided(c.vote));
   useEffect(() => {
     load();
     const interval = setInterval(load, hasLiveVote ? 2000 : 5000);
@@ -121,6 +123,9 @@ export default function CommitteeView() {
               onUpdate={applyUpdate}
             />
           </div>
+
+          {/* Shared documents */}
+          <FilesPanel committeeId={active.id} canManage={canManage} />
 
           {/* Speaker list */}
           <div>

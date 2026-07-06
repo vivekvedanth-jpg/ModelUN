@@ -23,12 +23,14 @@ import {
   toggleSpeakerDone,
   clearSpeakers,
   setPublished,
+  voteDecided,
   type Committee,
   type RosterAccount,
 } from "@/lib/committee";
 import SessionBanner from "./committee/SessionBanner";
 import VotePanel from "./committee/VotePanel";
 import ChatPanel from "./committee/ChatPanel";
+import FilesPanel from "./committee/FilesPanel";
 import {
   ScaleIcon,
   PlusIcon,
@@ -98,7 +100,9 @@ export default function CommitteeBoard() {
         .catch(() => {})
         .finally(() => {
           if (cancelled) return;
-          const live = committeesRef.current.some((c) => c.vote && !c.vote.closed);
+          // Poll fast only while a vote is genuinely live (not merely un-closed
+          // after its timer lapsed), so we don't hammer the server forever.
+          const live = committeesRef.current.some((c) => c.vote && !voteDecided(c.vote));
           timer = setTimeout(tick, live ? 2000 : 5000);
         });
     };
@@ -334,6 +338,9 @@ export default function CommitteeBoard() {
               onUpdate={applyUpdate}
             />
           </div>
+
+          {/* Shared documents */}
+          <FilesPanel committeeId={active.id} canManage />
 
           {/* Speaker list */}
           <div>

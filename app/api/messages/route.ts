@@ -21,15 +21,21 @@ export async function GET(req: NextRequest) {
 
 /** POST — anyone (no auth required) sends a contact message. */
 export async function POST(req: NextRequest) {
-  let body: { name?: string; email?: string; message?: string };
+  let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return fail("Invalid body."); }
 
-  const name = body.name?.trim() ?? "";
-  const email = body.email?.trim() ?? "";
-  const message = body.message?.trim() ?? "";
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const email = typeof body.email === "string" ? body.email.trim() : "";
+  const message = typeof body.message === "string" ? body.message.trim() : "";
 
-  if (!name || !email || message.length < 5) {
-    return fail("Please provide name, email, and a message (at least 5 chars).");
+  if (!name || name.length > 80) {
+    return fail("Please provide your name (up to 80 characters).");
+  }
+  if (email.length > 120 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return fail("Please provide a valid email address (up to 120 characters).");
+  }
+  if (message.length < 5 || message.length > 2000) {
+    return fail("Your message must be between 5 and 2000 characters.");
   }
 
   const doc: MessageDoc = { id: makeId(), name, email, message, createdAt: Date.now() };

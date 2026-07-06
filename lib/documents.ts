@@ -30,11 +30,11 @@ export async function getDocument(id: string): Promise<ResolutionDoc | undefined
   }
 }
 
-export async function createDocument(title?: string): Promise<ResolutionDoc> {
+export async function createDocument(title?: string, html?: string): Promise<ResolutionDoc> {
   const res = await api("/api/documents", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({ title, html }),
   });
   return ((await res.json()) as { document: ResolutionDoc }).document;
 }

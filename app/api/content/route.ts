@@ -12,6 +12,9 @@ function makeId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+const TITLE_MAX = 140;
+const DESC_MAX = 500;
+
 const DEFAULT_RESOURCES: ResourceDoc[] = [
   { id: "udhr", title: "Universal Declaration of Human Rights (Res. 217 A)", type: "Resolution", format: "PDF", desc: "The landmark 1948 UN General Assembly resolution — a model for clear, principled drafting.", url: "https://www.un.org/sites/un2.un.org/files/2021/03/udhr.pdf", seeded: true },
   { id: "un-charter", title: "Charter of the United Nations", type: "Reference", format: "Web", desc: "The founding treaty of the UN — essential context for every committee.", url: "https://www.un.org/en/about-us/un-charter/full-text", seeded: true },
@@ -30,27 +33,54 @@ const DEFAULT_VIDEOS: VideoDoc[] = [
   { id: "v6", title: "Surviving Your First Crisis Committee", category: "Crisis", level: "Advanced", duration: "14:47", seeded: true },
 ];
 
-/** GET ?kind=resource|video */
+/** Trimmed string for string input; undefined for blank or non-string values. */
+function str(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  return v.trim() || undefined;
+}
+
+function isKind(v: unknown): v is "video" | "resource" {
+  return v === "video" || v === "resource";
+}
+
+/** Strips Mongo's _id so responses match the client types in lib/content.ts. */
+function toResource(d: ResourceDoc): ResourceDoc {
+  return { id: d.id, title: d.title, type: d.type, format: d.format, desc: d.desc, url: d.url, seeded: d.seeded };
+}
+
+function toVideo(d: VideoDoc): VideoDoc {
+  return { id: d.id, title: d.title, category: d.category, level: d.level, duration: d.duration, url: d.url, seeded: d.seeded };
+}
+
+/** GET ?kind=resource|video — any signed-in user. */
 export async function GET(req: NextRequest) {
+  const me = await getSessionUser(req);
+  if (!me) return fail("You must be signed in.", 401);
+
   const kind = req.nextUrl.searchParams.get("kind") ?? "resource";
 
   if (kind === "video") {
     const col = await videosCol();
     let docs = await col.find({}).toArray();
     if (docs.length === 0) {
-      await col.insertMany(DEFAULT_VIDEOS as VideoDoc[]);
+      // Per-doc upserts keyed on id: concurrent first requests can't double-seed.
+      for (const doc of DEFAULT_VIDEOS) {
+        await col.updateOne({ id: doc.id }, { $setOnInsert: doc }, { upsert: true });
+      }
       docs = await col.find({}).toArray();
     }
-    return NextResponse.json({ videos: docs });
+    return NextResponse.json({ videos: docs.map(toVideo) });
   }
 
   const col = await resourcesCol();
   let docs = await col.find({}).toArray();
   if (docs.length === 0) {
-    await col.insertMany(DEFAULT_RESOURCES as ResourceDoc[]);
+    for (const doc of DEFAULT_RESOURCES) {
+      await col.updateOne({ id: doc.id }, { $setOnInsert: doc }, { upsert: true });
+    }
     docs = await col.find({}).toArray();
   }
-  return NextResponse.json({ resources: docs });
+  return NextResponse.json({ resources: docs.map(toResource) });
 }
 
 /** POST — admin publishes a new resource or video. */
@@ -61,18 +91,31 @@ export async function POST(req: NextRequest) {
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return fail("Invalid body."); }
 
-  const kind = body.kind as string | undefined;
-  const title = (body.title as string | undefined)?.trim();
+  const kind = body.kind;
+  if (!isKind(kind)) return fail("Unknown content kind.");
+
+  const title = str(body.title);
   if (!title) return fail("Title is required.");
+  if (title.length > TITLE_MAX) return fail(`Titles are capped at ${TITLE_MAX} characters.`);
+
+  // Trim first, then validate — "  https://x " passes, "ftp://x" doesn't.
+  const url = str(body.url);
+  if (url && !/^https?:\/\//.test(url)) {
+    return fail("Links must start with http:// or https://.");
+  }
+
+  const desc = str(body.desc);
+  if (desc && desc.length > DESC_MAX) return fail(`Descriptions are capped at ${DESC_MAX} characters.`);
 
   if (kind === "video") {
+    const level = body.level;
     const doc: VideoDoc = {
       id: makeId(),
       title,
-      category: (body.category as string | undefined)?.trim() || "General",
-      level: (body.level as VideoDoc["level"]) || "Beginner",
-      duration: (body.duration as string | undefined)?.trim() || "—",
-      url: (body.url as string | undefined)?.trim() || undefined,
+      category: str(body.category) ?? "General",
+      level: level === "Intermediate" || level === "Advanced" ? level : "Beginner",
+      duration: str(body.duration) ?? "—",
+      url,
     };
     await (await videosCol()).insertOne(doc);
     return NextResponse.json({ video: doc }, { status: 201 });
@@ -81,10 +124,10 @@ export async function POST(req: NextRequest) {
   const doc: ResourceDoc = {
     id: makeId(),
     title,
-    type: (body.type as string | undefined)?.trim() || "Resource",
-    format: (body.format as string | undefined)?.trim() || ((body.url as string) ? "Link" : "File"),
-    desc: (body.desc as string | undefined)?.trim() || "Uploaded by an administrator.",
-    url: (body.url as string | undefined)?.trim() || undefined,
+    type: str(body.type) ?? "Resource",
+    format: str(body.format) ?? (url ? "Link" : "File"),
+    desc: desc ?? "Uploaded by an administrator.",
+    url,
   };
   await (await resourcesCol()).insertOne(doc);
   return NextResponse.json({ resource: doc }, { status: 201 });
@@ -97,7 +140,9 @@ export async function DELETE(req: NextRequest) {
 
   const id = req.nextUrl.searchParams.get("id");
   if (!id) return fail("Missing id.");
+
   const kind = req.nextUrl.searchParams.get("kind") ?? "resource";
+  if (!isKind(kind)) return fail("Unknown content kind.");
 
   if (kind === "video") {
     await (await videosCol()).deleteOne({ id });

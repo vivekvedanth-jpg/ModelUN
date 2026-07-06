@@ -27,6 +27,11 @@ export interface VoteView {
   tally: { yes: number; no: number; total: number } | null;
 }
 
+export interface MessageReaction {
+  emoji: string;
+  email: string;
+}
+
 export interface CommitteeMessage {
   id: string;
   authorEmail: string;
@@ -34,7 +39,13 @@ export interface CommitteeMessage {
   toEmail?: string;
   text: string;
   createdAt: number;
+  /** True for chair/admin announcements (highlighted in the chat). */
+  announcement?: boolean;
+  reactions?: MessageReaction[];
 }
+
+/** Emoji delegates may react to chat messages with. */
+export const REACTION_EMOJI = ["👍", "👏", "🙋", "❤️", "😂"];
 
 export interface SessionStatus {
   label: string;
@@ -244,9 +255,18 @@ export async function clearVote(id: string): Promise<Committee> {
 export async function sendCommitteeMessage(
   id: string,
   text: string,
-  toEmail?: string
+  toEmail?: string,
+  announcement?: boolean
 ): Promise<Committee> {
-  return patch({ id, action: "send_message", text, toEmail });
+  return patch({ id, action: "send_message", text, toEmail, announcement });
+}
+
+export async function deleteCommitteeMessage(id: string, messageId: string): Promise<Committee> {
+  return patch({ id, action: "delete_message", messageId });
+}
+
+export async function reactToMessage(id: string, messageId: string, emoji: string): Promise<Committee> {
+  return patch({ id, action: "react_message", messageId, emoji });
 }
 
 export async function clearCommitteeMessages(id: string): Promise<Committee> {

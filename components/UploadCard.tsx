@@ -8,6 +8,7 @@ interface UploadCardProps {
   kind: "video" | "resource";
   title: string;
   description: string;
+  /** Unused — entries link out to a URL. Kept so existing call sites compile. */
   accept?: string;
   cta: string;
   onAdded?: () => void;
@@ -17,7 +18,6 @@ export default function UploadCard({
   kind,
   title,
   description,
-  accept,
   cta,
   onAdded,
 }: UploadCardProps) {
@@ -84,12 +84,10 @@ export default function UploadCard({
         value={url}
         onChange={(e) => setUrl(e.target.value)}
       />
-
-      <label className="mt-3 flex cursor-pointer items-center justify-center rounded-xl border border-navy-200 bg-white px-4 py-3 text-sm text-navy-600 hover:border-navy-400">
-        <UploadIcon width={16} height={16} />
-        <span className="ml-2">Choose a file{accept ? ` (${accept})` : ""}</span>
-        <input type="file" accept={accept} className="hidden" />
-      </label>
+      <p className="mt-2 text-xs text-navy-500">
+        Published entries link out to this URL — paste a link to where the{" "}
+        {kind === "video" ? "video" : "resource"} is hosted.
+      </p>
 
       {error && (
         <p className="mt-3 flex items-center gap-2 rounded-lg bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">

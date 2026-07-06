@@ -28,9 +28,37 @@ async function api(path: string, init?: RequestInit): Promise<Response> {
   return res;
 }
 
-export async function getRankingSettings(): Promise<{ points: Record<string, number>; manualOrder: string[] }> {
+export interface RankingSettings {
+  points: Record<string, number>;
+  manualOrder: string[];
+  /** Admin overrides for award display names, keyed by canonical placement. */
+  awardNames: Record<string, string>;
+}
+
+export async function getRankingSettings(): Promise<RankingSettings> {
   const res = await api("/api/ranking");
-  return res.json() as Promise<{ points: Record<string, number>; manualOrder: string[] }>;
+  const data = (await res.json()) as Partial<RankingSettings>;
+  return {
+    points: data.points ?? { ...DEFAULT_POINTS },
+    manualOrder: data.manualOrder ?? [],
+    awardNames: data.awardNames ?? {},
+  };
+}
+
+/** The display label for a placement, honouring admin renames. */
+export function awardLabel(
+  placement: string,
+  names: Record<string, string> = {}
+): string {
+  return names[placement]?.trim() || placement;
+}
+
+export async function setAwardNames(names: Record<string, string>): Promise<void> {
+  await api("/api/ranking", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "set_award_names", value: names }),
+  });
 }
 
 export async function setPointsMap(map: Record<string, number>): Promise<void> {

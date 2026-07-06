@@ -5,14 +5,18 @@ import {
   type VoteRecord, type VoteThreshold, type CommitteeMessage, type SessionStatus,
   type UserDoc,
 } from "@/lib/server/db";
-import { getSessionUser, isAdminDoc, isOwnerDoc, fail } from "@/lib/server/session";
+import { getSessionUser, isAdminDoc, emailPattern, fail } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DEFAULT_COLUMN_LABELS = ["GSL", "Mod Caucus", "Unmod Caucus", "Resolution", "Diplomacy"];
 const MAX_VOTE_SECONDS = 120;
+/** A single extend click is capped at MAX_VOTE_SECONDS; total duration at this. */
+const MAX_VOTE_TOTAL_SECONDS = 600;
 const MAX_MESSAGES = 200;
+/** Emoji a delegate may react to a chat message with. */
+const REACTION_EMOJI = ["👍", "👏", "🙋", "❤️", "😂"];
 
 function makeId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -128,10 +132,10 @@ export async function GET(req: NextRequest) {
   if (isAdminDoc(me)) {
     docs = await col.find({}).toArray();
   } else if (me.role === "chair") {
-    docs = await col.find({ chair: new RegExp(`^${me.email}$`, "i") }).toArray();
+    docs = await col.find({ chair: emailPattern(me.email) }).toArray();
   } else {
     // A delegate sees only the committees they've been added to.
-    docs = await col.find({ "delegates.email": new RegExp(`^${me.email}$`, "i") }).toArray();
+    docs = await col.find({ "delegates.email": emailPattern(me.email) }).toArray();
   }
   docs.sort((a, b) => b.updatedAt - a.updatedAt);
   return NextResponse.json({ committees: docs.map((c) => serialize(c, me)) });
@@ -181,9 +185,10 @@ export async function PATCH(req: NextRequest) {
   const committee = await col.findOne({ id });
   if (!committee) return fail("Committee not found.", 404);
 
-  // Members (delegates) may cast votes and send messages; everything else is
-  // chair/admin-only management.
-  const memberActions = new Set(["cast_vote", "send_message"]);
+  // Members (delegates) may cast votes, send messages, react, and delete their
+  // own messages; everything else is chair/admin-only management. Per-message
+  // ownership for delete_message is checked inside its case.
+  const memberActions = new Set(["cast_vote", "send_message", "react_message", "delete_message"]);
   if (memberActions.has(action)) {
     if (!isMember(me, committee)) return fail("You're not in this committee.", 403);
   } else {
@@ -207,7 +212,8 @@ export async function PATCH(req: NextRequest) {
       break;
     }
     case "rename_column": {
-      const { columnId, label } = body as { columnId: string; label: string };
+      const { columnId } = body as { columnId: string; label: string };
+      const label = ((body.label as string | undefined)?.trim()) || "New";
       await col.updateOne(
         { id, "columns.id": columnId },
         { $set: { "columns.$.label": label, updatedAt: now } }
@@ -240,7 +246,7 @@ export async function PATCH(req: NextRequest) {
       if (!name && !email) return fail("Delegate name or account is required.");
 
       if (email) {
-        const account = await (await usersCol()).findOne({ email: new RegExp(`^${email}$`, "i") });
+        const account = await (await usersCol()).findOne({ email: emailPattern(email) });
         if (!account) return fail("No account exists with that email — create the delegate's account first.");
         const dupe = committee.delegates.some((d) => d.email && lc(d.email) === email);
         if (dupe) return fail("That delegate is already in this committee.");
@@ -373,18 +379,40 @@ export async function PATCH(req: NextRequest) {
       if (!v) return fail("There's no active vote.");
       if (voteClosed(v)) return fail("Voting has closed.");
       const email = lc(me.email);
-      // Legacy votes stored ballots as an object; normalise to an array first so
-      // $pull/$push don't fail on a non-array field.
-      if (!Array.isArray(v.ballots)) {
-        await col.updateOne({ id }, { $set: { "vote.ballots": [] } });
-      }
-      // Atomic per-voter: drop any prior ballot from this email, then add the new
-      // one. Scoped to this email so concurrent voters never clobber each other.
-      await col.updateOne({ id }, { $pull: { "vote.ballots": { email } } });
-      await col.updateOne(
-        { id },
-        { $push: { "vote.ballots": { email, choice } }, $set: { updatedAt: now } }
+      // One atomic aggregation-pipeline update, matched on the vote's id so a
+      // vote that was cleared or replaced between our read and this write can
+      // never be resurrected (the old TOCTOU bug). Rebuild the ballot list as
+      // "everyone but me" + my new ballot — normalising legacy object ballots
+      // to [] in the same expression.
+      const res = await col.updateOne(
+        { id, "vote.id": v.id },
+        [
+          {
+            $set: {
+              "vote.ballots": {
+                $concatArrays: [
+                  {
+                    $filter: {
+                      input: {
+                        $cond: [
+                          { $isArray: "$vote.ballots" },
+                          "$vote.ballots",
+                          [],
+                        ],
+                      },
+                      as: "b",
+                      cond: { $ne: ["$$b.email", email] },
+                    },
+                  },
+                  [{ email, choice }],
+                ],
+              },
+              updatedAt: now,
+            },
+          },
+        ]
       );
+      if (res.matchedCount === 0) return fail("Voting has closed.");
       break;
     }
     case "extend_vote": {
@@ -402,9 +430,11 @@ export async function PATCH(req: NextRequest) {
           { $set: { "vote.startedAt": now, "vote.durationSec": addSec, updatedAt: now } }
         );
       } else {
+        // Grow the running timer, but never past the total ceiling.
+        const nextDuration = Math.min(v.durationSec + addSec, MAX_VOTE_TOTAL_SECONDS);
         await col.updateOne(
           { id },
-          { $set: { "vote.durationSec": v.durationSec + addSec, updatedAt: now } }
+          { $set: { "vote.durationSec": nextDuration, updatedAt: now } }
         );
       }
       break;
@@ -424,7 +454,24 @@ export async function PATCH(req: NextRequest) {
       const text = (body.text as string | undefined)?.trim();
       if (!text) return fail("Message can't be empty.");
       if (text.length > 1000) return fail("Message is too long.");
-      const toEmail = body.toEmail ? lc(body.toEmail as string) : undefined;
+
+      // Validate the recipient: only the chair or a linked delegate of THIS
+      // committee, otherwise the DM would be invisible to everyone but sender.
+      let toEmail: string | undefined;
+      if (body.toEmail) {
+        toEmail = lc(body.toEmail as string);
+        const isChair = lc(committee.chair) === toEmail;
+        const isDelegate = committee.delegates.some(
+          (d) => d.email && lc(d.email) === toEmail
+        );
+        if (!isChair && !isDelegate) {
+          return fail("That recipient isn't in this committee.");
+        }
+      }
+
+      // Only chairs/admins can post an announcement.
+      const announcement = body.announcement === true && canManage(me, committee);
+
       const message: CommitteeMessage = {
         id: makeId(),
         authorEmail: lc(me.email),
@@ -432,6 +479,7 @@ export async function PATCH(req: NextRequest) {
         toEmail,
         text,
         createdAt: now,
+        ...(announcement ? { announcement: true } : {}),
       };
       await col.updateOne(
         { id },
@@ -440,6 +488,47 @@ export async function PATCH(req: NextRequest) {
           $set: { updatedAt: now },
         }
       );
+      break;
+    }
+    case "delete_message": {
+      const messageId = body.messageId as string | undefined;
+      if (!messageId) return fail("Missing messageId.");
+      const msg = (committee.messages ?? []).find((m) => m.id === messageId);
+      if (!msg) break; // already gone
+      // The author may delete their own message; managers may delete any.
+      if (lc(msg.authorEmail) !== lc(me.email) && !canManage(me, committee)) {
+        return fail("You can only delete your own messages.", 403);
+      }
+      await col.updateOne(
+        { id },
+        {
+          $pull: { messages: { id: messageId } as unknown as CommitteeMessage },
+          $set: { updatedAt: now },
+        }
+      );
+      break;
+    }
+    case "react_message": {
+      const messageId = body.messageId as string | undefined;
+      const emoji = body.emoji as string | undefined;
+      if (!messageId) return fail("Missing messageId.");
+      if (!emoji || !REACTION_EMOJI.includes(emoji)) return fail("Invalid reaction.");
+      const email = lc(me.email);
+      const fresh = await col.findOne({ id });
+      if (!fresh) break;
+      const messages = (fresh.messages ?? []).map((m) => {
+        if (m.id !== messageId) return m;
+        const reactions = Array.isArray(m.reactions) ? m.reactions : [];
+        const existing = reactions.find(
+          (r) => r.emoji === emoji && lc(r.email) === email
+        );
+        // Toggle: remove my identical reaction, or add it.
+        const next = existing
+          ? reactions.filter((r) => !(r.emoji === emoji && lc(r.email) === email))
+          : [...reactions, { emoji, email }];
+        return { ...m, reactions: next };
+      });
+      await col.updateOne({ id }, { $set: { messages, updatedAt: now } });
       break;
     }
     case "clear_messages": {

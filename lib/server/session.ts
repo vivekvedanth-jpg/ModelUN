@@ -43,11 +43,42 @@ export async function getSessionUser(req: NextRequest): Promise<UserDoc | null> 
     return null;
   }
   const users = await usersCol();
-  return users.findOne({ email });
+  const user = await users.findOne({ email });
+  // Expired guest accounts are deleted the moment they're next seen.
+  if (user && isGuestExpired(user)) {
+    await users.deleteOne({ email: user.email });
+    return null;
+  }
+  return user;
+}
+
+/** Escape a string for safe interpolation into a RegExp. */
+export function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Case-insensitive exact-match pattern for an email (safe for user input). */
+export function emailPattern(email: string): RegExp {
+  return new RegExp(`^${escapeRegex(email.trim())}$`, "i");
 }
 
 export function isAdminDoc(u: UserDoc | null): boolean {
   return !!u && (u.role === "admin" || u.role === "owner");
+}
+
+export function isGuestDoc(u: UserDoc | null): boolean {
+  return !!u && u.role === "guest";
+}
+
+/** True when a guest account is past its expiry timestamp. */
+export function isGuestExpired(u: UserDoc, now = Date.now()): boolean {
+  return u.role === "guest" && typeof u.expiresAt === "number" && now >= u.expiresAt;
+}
+
+/** Remove every guest account whose expiry has passed (opportunistic sweep). */
+export async function sweepExpiredGuests(): Promise<void> {
+  const users = await usersCol();
+  await users.deleteMany({ role: "guest", expiresAt: { $lte: Date.now() } });
 }
 
 export function isOwnerDoc(u: UserDoc | null): boolean {

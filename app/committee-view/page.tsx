@@ -4,7 +4,7 @@ import CommitteeView from "@/components/CommitteeView";
 
 export default function CommitteeViewPage() {
   return (
-    <Protected>
+    <Protected allowGuest>
       <PageHeader
         eyebrow="Your committee"
         title="Committee"

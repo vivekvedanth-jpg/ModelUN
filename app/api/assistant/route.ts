@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { isValidAssistantModel, DEFAULT_ASSISTANT_MODEL } from "@/lib/assistant";
+import { getSessionUser, isGuestDoc, fail } from "@/lib/server/session";
 
 // This route runs on the server, so GEMINI_API_KEY is never sent to the browser.
 export const runtime = "nodejs";
@@ -51,7 +52,12 @@ function cleanFormatting(text: string): string {
     .trim();
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  // Signed-in, non-guest users only — every call spends real Gemini quota.
+  const me = await getSessionUser(request);
+  if (!me) return fail("You must be signed in.", 401);
+  if (isGuestDoc(me)) return fail("Guest accounts can't use the assistant.", 403);
+
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
