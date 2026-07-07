@@ -129,6 +129,26 @@
 .doc-content a {
   @apply text-navy-700 underline;
 }
+/* Images inside the editor / documents. */
+.doc-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+.doc-content img.doc-img {
+  cursor: pointer;
+}
+/* UN emblem + centred header block used by the official templates. */
+.doc-content .un-header {
+  margin-bottom: 0.5rem;
+}
+.doc-content .un-emblem {
+  display: inline-block;
+  margin: 0 auto 0.25rem;
+}
+.doc-content .un-header h1 {
+  margin-top: 0.25rem;
+}
 /* Placeholder shown only while the editor is empty. */
 .doc-content[data-empty="true"]::before {
   content: attr(data-placeholder);

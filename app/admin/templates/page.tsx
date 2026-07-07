@@ -8,7 +8,7 @@ export default function TemplatesPage() {
       <PageHeader
         eyebrow="Admin"
         title="Document Templates"
-        description="Set the starting format delegates get for directives, resolutions, and working papers."
+        description="Edit the official UN formats delegates start from, or create your own custom templates."
       />
 
       <section className="container-page py-12 sm:py-16">

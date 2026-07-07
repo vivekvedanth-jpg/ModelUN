@@ -160,8 +160,8 @@ export default function AdminDashboard() {
                 <ArrowRightIcon width={16} height={16} className="opacity-0 transition-opacity group-hover:opacity-100" />
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-navy-600">
-                Set the starting format delegates get for directives, resolutions,
-                and working papers in the Editor.
+                Edit the official UN formats delegates start from, or create your
+                own custom templates for the Editor.
               </p>
             </Link>
 

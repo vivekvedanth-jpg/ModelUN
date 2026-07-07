@@ -6,7 +6,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_TITLE = 200;
-const MAX_HTML = 500_000;
+// Generous cap so a document can embed a few (downscaled) images as data URLs.
+const MAX_HTML = 3_000_000;
 
 function makeId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;

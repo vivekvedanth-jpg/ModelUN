@@ -136,8 +136,14 @@ function renderClause(text: string, type: "pre" | "op", punct: string): string {
   return `${wrapped}${escapeHtml(body)}${punct}`;
 }
 
+/** True if the element holds media we must not rebuild away (images, SVG). */
+function hasMedia(el: Element): boolean {
+  return !!el.querySelector("img, svg");
+}
+
 /** Format a single block in place (used for the light on-Enter pass). */
 export function formatClauseBlock(el: Element): ClauseType {
+  if (hasMedia(el)) return null; // never rebuild a block that contains a picture
   const text = textOf(el);
   if (!text) return null;
   const type = classifyClause(text);
@@ -199,6 +205,7 @@ export function formatDocument(
       if (el.tagName === "OL") {
         flushBuffer();
         el.querySelectorAll("li").forEach((li) => {
+          if (hasMedia(li)) return; // don't rebuild a clause that contains a picture
           // Only the direct text of this li (ignore nested list text) decides type.
           const liText = directText(li);
           const type = classifyClause(liText);
@@ -214,7 +221,7 @@ export function formatDocument(
         continue;
       }
 
-      if (isClauseBlock(el)) {
+      if (isClauseBlock(el) && !hasMedia(el)) {
         const text = textOf(el);
         const type = classifyClause(text);
         if (type === "op" || type === "binding") {
