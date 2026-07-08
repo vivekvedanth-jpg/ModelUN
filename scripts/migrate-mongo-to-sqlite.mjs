@@ -10,9 +10,12 @@
  * to ./data/mun.db). Re-running replaces the SQLite contents with a fresh copy.
  */
 import { MongoClient } from "mongodb";
-import Database from "better-sqlite3";
+import initSqlJs from "sql.js";
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 
 // Load .env.local as a fallback for any missing vars.
 try {
@@ -45,8 +48,11 @@ async function main() {
   console.log(`Target: SQLite ${SQLITE_PATH}\n`);
 
   fs.mkdirSync(path.dirname(SQLITE_PATH), { recursive: true });
-  const sqlite = new Database(SQLITE_PATH);
-  sqlite.pragma("journal_mode = WAL");
+  const SQL = await initSqlJs({
+    locateFile: (f) => require.resolve(`sql.js/dist/${f}`),
+  });
+  const existing = fs.existsSync(SQLITE_PATH) ? fs.readFileSync(SQLITE_PATH) : undefined;
+  const sqlite = new SQL.Database(existing);
 
   const mongo = new MongoClient(MONGODB_URI);
   await mongo.connect();
@@ -55,21 +61,18 @@ async function main() {
   let total = 0;
   for (const name of COLLECTIONS) {
     const docs = await db.collection(name).find({}).toArray();
-    sqlite.exec(`CREATE TABLE IF NOT EXISTS "${name}" (rowid INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT NOT NULL)`);
-    sqlite.prepare(`DELETE FROM "${name}"`).run(); // fresh copy
-    const insert = sqlite.prepare(`INSERT INTO "${name}" (data) VALUES (?)`);
-    const tx = sqlite.transaction((rows) => {
-      for (const d of rows) {
-        delete d._id; // drop Mongo's internal id; the app uses its own string ids
-        insert.run(JSON.stringify(d));
-      }
-    });
-    tx(docs);
+    sqlite.run(`CREATE TABLE IF NOT EXISTS "${name}" (rowid INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT NOT NULL)`);
+    sqlite.run(`DELETE FROM "${name}"`); // fresh copy
+    for (const d of docs) {
+      delete d._id; // drop Mongo's internal id; the app uses its own string ids
+      sqlite.run(`INSERT INTO "${name}" (data) VALUES (?)`, [JSON.stringify(d)]);
+    }
     console.log(`  ${name.padEnd(16)} ${docs.length} document(s)`);
     total += docs.length;
   }
 
   await mongo.close();
+  fs.writeFileSync(SQLITE_PATH, Buffer.from(sqlite.export()));
   sqlite.close();
   console.log(`\n✅ Migrated ${total} documents into ${SQLITE_PATH}`);
 }

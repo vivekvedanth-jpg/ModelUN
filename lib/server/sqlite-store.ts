@@ -1,19 +1,26 @@
 /**
- * SERVER-ONLY embedded document store backed by SQLite (better-sqlite3).
+ * SERVER-ONLY embedded document store backed by SQLite (sql.js — SQLite
+ * compiled to WebAssembly).
  *
  * It exposes a tiny MongoDB-compatible subset (findOne/find/insertOne/updateOne/
  * updateMany/deleteOne/deleteMany/countDocuments/createIndex) so the existing API
  * routes keep working almost unchanged after moving off MongoDB Atlas. Each
  * collection is a SQLite table `(rowid, data JSON)`; documents are plain JSON.
  *
- * better-sqlite3 is synchronous, and Node runs our request handlers on a single
- * thread, so every store operation is naturally atomic — no races on the
- * committee chat/votes that MongoDB previously guarded with $-operators.
+ * sql.js is deliberately used instead of a native module (e.g. better-sqlite3):
+ * it's pure WASM, so there's no node-gyp/C++ compile step and no Node-version
+ * constraint — it just works on any host, including shared hosting without a
+ * build toolchain. The whole database lives in memory and is flushed to a
+ * single file on disk after each write (fine at our scale).
+ *
+ * All access goes through a per-process write queue (see `withDb`) so
+ * concurrent request handlers never interleave reads/writes — every store
+ * operation is atomic, same guarantee the previous better-sqlite3 version had.
  *
  * The query/update helpers below are pure (no I/O) and unit-tested separately.
  */
 
-import Database from "better-sqlite3";
+import initSqlJs, { type Database as SqlJsDatabase } from "sql.js";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -260,112 +267,172 @@ export interface StoreCollection<T> {
   mutate(filter: Filter, mutator: (doc: T) => T | null): Promise<T | null>;
 }
 
-let db: Database.Database | null = null;
+function dbFilePath(): string {
+  return process.env.SQLITE_PATH || path.join(process.cwd(), "data", "mun.db");
+}
 
-function handle(): Database.Database {
-  if (db) return db;
-  const file = process.env.SQLITE_PATH || path.join(process.cwd(), "data", "mun.db");
+let db: SqlJsDatabase | null = null;
+let ready: Promise<void> | null = null;
+/** Serializes every store call so reads/writes never interleave (single writer at a time). */
+let queue: Promise<unknown> = Promise.resolve();
+let dirty = false;
+
+async function init(): Promise<void> {
+  if (db) return;
+  const SQL = await initSqlJs({
+    // Point straight at the installed package's wasm binary — no bundler/CDN involved.
+    locateFile: (f) => path.join(process.cwd(), "node_modules", "sql.js", "dist", f),
+  });
+  const file = dbFilePath();
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  db = new Database(file);
-  db.pragma("journal_mode = WAL"); // better concurrency for our read-heavy load
-  db.pragma("foreign_keys = ON");
-  return db;
+  const bytes = fs.existsSync(file) ? fs.readFileSync(file) : undefined;
+  db = new SQL.Database(bytes);
+}
+
+function flush(): void {
+  if (!db || !dirty) return;
+  const data = db.export();
+  fs.writeFileSync(dbFilePath(), Buffer.from(data));
+  dirty = false;
+}
+
+/** Run `fn` against the live db, serialized after all prior calls; flushes to disk if it wrote. */
+function withDb<R>(fn: (d: SqlJsDatabase) => R, mutates: boolean): Promise<R> {
+  const task = queue.then(async () => {
+    if (!ready) ready = init();
+    await ready;
+    const result = fn(db as SqlJsDatabase);
+    if (mutates) { dirty = true; flush(); }
+    return result;
+  });
+  queue = task.catch(() => {}); // one failed op must not wedge the queue
+  return task as Promise<R>;
 }
 
 const knownTables = new Set<string>();
 
-function ensureTable(name: string): void {
+function ensureTable(d: SqlJsDatabase, name: string): void {
   if (knownTables.has(name)) return;
-  handle().exec(`CREATE TABLE IF NOT EXISTS "${name}" (rowid INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT NOT NULL)`);
+  d.run(`CREATE TABLE IF NOT EXISTS "${name}" (rowid INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT NOT NULL)`);
   knownTables.add(name);
 }
 
+/** Run a SELECT and return every row as plain objects. */
+function selectAll(d: SqlJsDatabase, sql: string, params: unknown[] = []): Record<string, unknown>[] {
+  const stmt = d.prepare(sql);
+  stmt.bind(params as never);
+  const out: Record<string, unknown>[] = [];
+  while (stmt.step()) out.push(stmt.getAsObject());
+  stmt.free();
+  return out;
+}
+
+interface Row { rowid: number; doc: Doc }
+
 class SqliteCollection<T> implements StoreCollection<T> {
-  constructor(private readonly table: string) {
-    ensureTable(table);
+  constructor(private readonly table: string) {}
+
+  private rows(d: SqlJsDatabase): Row[] {
+    ensureTable(d, this.table);
+    return selectAll(d, `SELECT rowid, data FROM "${this.table}"`).map((r) => ({
+      rowid: r.rowid as number,
+      doc: JSON.parse(r.data as string) as Doc,
+    }));
   }
 
-  /** Load & parse every row (SQLite is fast at our scale; no open cursor kept). */
-  private rows(): { rowid: number; doc: Doc }[] {
-    const stmt = handle().prepare(`SELECT rowid, data FROM "${this.table}"`);
-    return (stmt.all() as { rowid: number; data: string }[]).map((r) => ({ rowid: r.rowid, doc: JSON.parse(r.data) as Doc }));
-  }
-
-  private write(rowid: number, doc: Doc): void {
-    handle().prepare(`UPDATE "${this.table}" SET data = ? WHERE rowid = ?`).run(JSON.stringify(doc), rowid);
+  private writeRow(d: SqlJsDatabase, rowid: number, doc: Doc): void {
+    d.run(`UPDATE "${this.table}" SET data = ? WHERE rowid = ?`, [JSON.stringify(doc), rowid]);
   }
 
   async findOne(filter: Filter = {}): Promise<T | null> {
-    const hit = this.rows().find((r) => matchesFilter(r.doc, filter));
-    return hit ? (hit.doc as unknown as T) : null;
+    return withDb((d) => {
+      const hit = this.rows(d).find((r) => matchesFilter(r.doc, filter));
+      return hit ? (hit.doc as unknown as T) : null;
+    }, false);
   }
 
   find(filter: Filter = {}): Cursor<T> {
     return {
-      toArray: async () => this.rows().filter((r) => matchesFilter(r.doc, filter)).map((r) => r.doc as unknown as T),
+      toArray: () => withDb((d) => this.rows(d).filter((r) => matchesFilter(r.doc, filter)).map((r) => r.doc as unknown as T), false),
     };
   }
 
   async insertOne(doc: T): Promise<{ insertedId: number }> {
-    const info = handle().prepare(`INSERT INTO "${this.table}" (data) VALUES (?)`).run(JSON.stringify(doc));
-    return { insertedId: Number(info.lastInsertRowid) };
+    return withDb((d) => {
+      ensureTable(d, this.table);
+      d.run(`INSERT INTO "${this.table}" (data) VALUES (?)`, [JSON.stringify(doc)]);
+      return { insertedId: d.exec("SELECT last_insert_rowid() AS id")[0].values[0][0] as number };
+    }, true);
   }
 
   async insertMany(docs: T[]): Promise<void> {
-    const stmt = handle().prepare(`INSERT INTO "${this.table}" (data) VALUES (?)`);
-    const tx = handle().transaction((items: T[]) => { items.forEach((d) => stmt.run(JSON.stringify(d))); });
-    tx(docs);
+    return withDb((d) => {
+      ensureTable(d, this.table);
+      for (const doc of docs) d.run(`INSERT INTO "${this.table}" (data) VALUES (?)`, [JSON.stringify(doc)]);
+    }, true);
   }
 
   async updateOne(filter: Filter, update: Update, options: { upsert?: boolean } = {}): Promise<WriteResult> {
-    const hit = this.rows().find((r) => matchesFilter(r.doc, filter));
-    if (hit) {
-      this.write(hit.rowid, applyUpdate(hit.doc, update));
-      return { matchedCount: 1, modifiedCount: 1, upsertedCount: 0, upsertedId: null };
-    }
-    if (options.upsert) {
-      const info = handle().prepare(`INSERT INTO "${this.table}" (data) VALUES (?)`).run(JSON.stringify(buildUpsertDoc(filter, update)));
-      return { matchedCount: 0, modifiedCount: 0, upsertedCount: 1, upsertedId: Number(info.lastInsertRowid) };
-    }
-    return { matchedCount: 0, modifiedCount: 0, upsertedCount: 0, upsertedId: null };
+    return withDb((d) => {
+      const hit = this.rows(d).find((r) => matchesFilter(r.doc, filter));
+      if (hit) {
+        this.writeRow(d, hit.rowid, applyUpdate(hit.doc, update));
+        return { matchedCount: 1, modifiedCount: 1, upsertedCount: 0, upsertedId: null };
+      }
+      if (options.upsert) {
+        d.run(`INSERT INTO "${this.table}" (data) VALUES (?)`, [JSON.stringify(buildUpsertDoc(filter, update))]);
+        const id = d.exec("SELECT last_insert_rowid() AS id")[0].values[0][0] as number;
+        return { matchedCount: 0, modifiedCount: 0, upsertedCount: 1, upsertedId: id };
+      }
+      return { matchedCount: 0, modifiedCount: 0, upsertedCount: 0, upsertedId: null };
+    }, true);
   }
 
   async updateMany(filter: Filter, update: Update): Promise<WriteResult> {
-    const targets = this.rows().filter((r) => matchesFilter(r.doc, filter));
-    const upd = handle().prepare(`UPDATE "${this.table}" SET data = ? WHERE rowid = ?`);
-    handle().transaction(() => { targets.forEach((t) => upd.run(JSON.stringify(applyUpdate(t.doc, update)), t.rowid)); })();
-    return { matchedCount: targets.length, modifiedCount: targets.length, upsertedCount: 0, upsertedId: null };
+    return withDb((d) => {
+      const targets = this.rows(d).filter((r) => matchesFilter(r.doc, filter));
+      for (const t of targets) this.writeRow(d, t.rowid, applyUpdate(t.doc, update));
+      return { matchedCount: targets.length, modifiedCount: targets.length, upsertedCount: 0, upsertedId: null };
+    }, true);
   }
 
   async deleteOne(filter: Filter): Promise<DeleteResult> {
-    const hit = this.rows().find((r) => matchesFilter(r.doc, filter));
-    if (!hit) return { deletedCount: 0 };
-    handle().prepare(`DELETE FROM "${this.table}" WHERE rowid = ?`).run(hit.rowid);
-    return { deletedCount: 1 };
+    return withDb((d) => {
+      const hit = this.rows(d).find((r) => matchesFilter(r.doc, filter));
+      if (!hit) return { deletedCount: 0 };
+      d.run(`DELETE FROM "${this.table}" WHERE rowid = ?`, [hit.rowid]);
+      return { deletedCount: 1 };
+    }, true);
   }
 
   async deleteMany(filter: Filter): Promise<DeleteResult> {
-    const targets = this.rows().filter((r) => matchesFilter(r.doc, filter));
-    const del = handle().prepare(`DELETE FROM "${this.table}" WHERE rowid = ?`);
-    handle().transaction(() => { targets.forEach((t) => del.run(t.rowid)); })();
-    return { deletedCount: targets.length };
+    return withDb((d) => {
+      const targets = this.rows(d).filter((r) => matchesFilter(r.doc, filter));
+      for (const t of targets) d.run(`DELETE FROM "${this.table}" WHERE rowid = ?`, [t.rowid]);
+      return { deletedCount: targets.length };
+    }, true);
   }
 
   async countDocuments(filter: Filter = {}): Promise<number> {
-    if (Object.keys(filter).length === 0) {
-      const r = handle().prepare(`SELECT COUNT(*) AS n FROM "${this.table}"`).get() as { n: number };
-      return r.n;
-    }
-    return this.rows().filter((r) => matchesFilter(r.doc, filter)).length;
+    return withDb((d) => {
+      if (Object.keys(filter).length === 0) {
+        ensureTable(d, this.table);
+        const r = selectAll(d, `SELECT COUNT(*) AS n FROM "${this.table}"`);
+        return r[0].n as number;
+      }
+      return this.rows(d).filter((r) => matchesFilter(r.doc, filter)).length;
+    }, false);
   }
 
   async mutate(filter: Filter, mutator: (doc: T) => T | null): Promise<T | null> {
-    const hit = this.rows().find((r) => matchesFilter(r.doc, filter));
-    if (!hit) return null;
-    const next = mutator(hit.doc as unknown as T);
-    if (next == null) return hit.doc as unknown as T; // mutator declined — leave unchanged
-    this.write(hit.rowid, next as unknown as Doc);
-    return next;
+    return withDb((d) => {
+      const hit = this.rows(d).find((r) => matchesFilter(r.doc, filter));
+      if (!hit) return null;
+      const next = mutator(hit.doc as unknown as T);
+      if (next == null) return hit.doc as unknown as T; // mutator declined — leave unchanged
+      this.writeRow(d, hit.rowid, next as unknown as Doc);
+      return next;
+    }, true);
   }
 
   /** No-op: uniqueness is enforced at the application layer (dup checks before insert). */
@@ -379,5 +446,8 @@ export function collection<T>(name: string): StoreCollection<T> {
 
 /** For tests: close and reset the connection. */
 export function _closeForTests(): void {
-  if (db) { db.close(); db = null; knownTables.clear(); }
+  if (db) { flush(); db.close(); db = null; }
+  ready = null;
+  queue = Promise.resolve();
+  knownTables.clear();
 }

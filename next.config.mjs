@@ -1,10 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // better-sqlite3 is a native module — keep it out of the bundle so its
-  // compiled binary is required from node_modules at runtime.
+  // sql.js loads its .wasm binary from disk at runtime (see lib/server/sqlite-store.ts) —
+  // keep it out of the webpack bundle so that file path resolution stays intact.
   experimental: {
-    serverComponentsExternalPackages: ["better-sqlite3"],
+    serverComponentsExternalPackages: ["sql.js"],
   },
 };
 
