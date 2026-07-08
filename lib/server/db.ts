@@ -3,13 +3,13 @@
  *
  * Data lives in an embedded SQLite database on the host's own disk (see
  * lib/server/sqlite-store.ts) — a single file, no external database service.
- * The store exposes a MongoDB-compatible subset, so the collection helpers and
- * API routes read the same as before. The owner account ("Admin1") is seeded
- * automatically on first access.
+ * The owner account is seeded automatically on first access; every other
+ * account (delegates, chairs, admins) is created through the app and stored in
+ * the same SQLite file.
  *
  * The SQLite file location defaults to `<cwd>/data/mun.db` and can be overridden
  * with the SQLITE_PATH environment variable (point this at a persistent disk
- * path on your host).
+ * path on your host so accounts survive redeploys).
  */
 
 import bcrypt from "bcryptjs";
@@ -44,7 +44,7 @@ export interface GroupDoc {
 
 /** The permanent owner, seeded on first run. */
 export const OWNER_CREDENTIALS = {
-  email: "admin1@mun.app",
+  email: "vivek@letsmun.com",
   password: "33cat",
 } as const;
 
@@ -194,7 +194,8 @@ export interface VoteRecord {
   closed: boolean;
   /**
    * One entry per voter. Stored as an array (not an email-keyed object) because
-   * MongoDB treats dots in field names as path separators, which corrupts emails.
+   * the store's dotted-path queries treat "." as a path separator, which would
+   * corrupt emails used as object keys.
    */
   ballots: VoteBallot[];
 }
@@ -257,8 +258,8 @@ export async function committeesCol(): Promise<StoreCollection<CommitteeDoc>> {
 /**
  * A document the chair/admins share with a committee (RoP, format guides…).
  * Stored inline as a base64 data URL, like experience scorecards. Kept in its
- * own collection so big files never push the committee doc toward Mongo's
- * 16 MB document cap.
+ * own collection so committee reads/writes don't have to carry large file
+ * payloads around.
  */
 export interface CommitteeFileDoc {
   id: string;

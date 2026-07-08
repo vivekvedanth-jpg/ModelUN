@@ -1,10 +1,11 @@
 /**
  * Client-side auth layer.
  *
- * Accounts now live in a real backend (MongoDB, via the /api routes), so the
- * data functions here are async fetch wrappers and the session is an httpOnly
- * cookie managed by the server. The small pure helpers (isAdmin, displayName,
- * …) stay synchronous because they only read the already-loaded User object.
+ * Accounts live in the server's SQLite database, reached via the /api routes,
+ * so the data functions here are async fetch wrappers and the session is an
+ * httpOnly cookie managed by the server. The small pure helpers (isAdmin,
+ * displayName, …) stay synchronous because they only read the already-loaded
+ * User object.
  */
 
 export type Role = "owner" | "admin" | "chair" | "normal" | "guest";
@@ -41,7 +42,7 @@ export interface AccountDetail {
 export const GUEST_DEFAULT_DAYS = 7;
 
 /** The permanent owner's email (kept for display + the isOwner fallback). */
-export const OWNER_EMAIL = "admin1@mun.app";
+export const OWNER_EMAIL = "vivek@letsmun.com";
 
 /** Sentinel group id meaning "this admin can access every group". */
 export const ALL_GROUPS = "all";

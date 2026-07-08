@@ -1,7 +1,7 @@
 /**
  * Client-side groups API (e.g. a MUN club, school, or university).
  *
- * Groups now live in the backend (MongoDB) so admin/group assignments work
+ * Groups live in the server's SQLite database so admin/group assignments work
  * across devices. These are async fetch wrappers; the server enforces that only
  * the Owner can create or delete groups.
  */

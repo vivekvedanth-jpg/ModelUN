@@ -89,7 +89,7 @@ export function canViewAllGroups(u: UserDoc): boolean {
   return u.role === "owner" || u.groupId === ALL_GROUPS;
 }
 
-/** A Mongo filter for the accounts a given admin/owner is allowed to see. */
+/** A store filter for the accounts a given admin/owner is allowed to see. */
 export function visibleAccountsFilter(u: UserDoc): Record<string, unknown> {
   if (canViewAllGroups(u)) return {};
   // Group-scoped admins see their group and themselves — plus the Owner, whose

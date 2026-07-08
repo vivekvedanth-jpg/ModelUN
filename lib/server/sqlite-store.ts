@@ -2,10 +2,11 @@
  * SERVER-ONLY embedded document store backed by SQLite (sql.js — SQLite
  * compiled to WebAssembly).
  *
- * It exposes a tiny MongoDB-compatible subset (findOne/find/insertOne/updateOne/
- * updateMany/deleteOne/deleteMany/countDocuments/createIndex) so the existing API
- * routes keep working almost unchanged after moving off MongoDB Atlas. Each
- * collection is a SQLite table `(rowid, data JSON)`; documents are plain JSON.
+ * It exposes a tiny document-store subset (findOne/find/insertOne/updateOne/
+ * updateMany/deleteOne/deleteMany/countDocuments/createIndex). Each collection
+ * is a SQLite table `(rowid, data JSON)`; documents are plain JSON. (The query
+ * and update operators intentionally mirror a familiar `$set`/`$or`/… syntax so
+ * the API routes read naturally.)
  *
  * sql.js is deliberately used instead of a native module (e.g. better-sqlite3):
  * it's pure WASM, so there's no node-gyp/C++ compile step and no Node-version
@@ -23,6 +24,13 @@
 import initSqlJs, { type Database as SqlJsDatabase } from "sql.js";
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
+
+// Resolve modules relative to THIS file, not the process cwd. On a host that
+// starts the app from a different directory (common on shared/managed hosting),
+// cwd-based lookups miss node_modules and sql.js fails to load its .wasm — which
+// is exactly what surfaced as the "can't open the database" 503 on login.
+const requireFromHere = createRequire(import.meta.url);
 
 /* ─────────────────────────── Pure query engine ──────────────────────────── */
 
@@ -34,7 +42,7 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof RegExp);
 }
 
-/** Mongo-style path resolution: descending into an array applies the field to each element. */
+/** Dotted-path resolution: descending into an array applies the field to each element. */
 function getCandidates(doc: unknown, dottedPath: string): unknown[] {
   let current: unknown[] = [doc];
   for (const part of dottedPath.split(".")) {
@@ -180,7 +188,7 @@ function pullField(obj: Doc, field: string, match: unknown): void {
   }
 }
 
-/** Apply Mongo-style update operators to a clone of `doc`, returning the new doc. */
+/** Apply update operators ($set/$push/$inc/…) to a clone of `doc`, returning the new doc. */
 export function applyUpdate(doc: Doc, update: Update): Doc {
   if (Array.isArray(update)) {
     throw new Error("Aggregation-pipeline updates are not supported by the SQLite store.");
@@ -267,8 +275,30 @@ export interface StoreCollection<T> {
   mutate(filter: Filter, mutator: (doc: T) => T | null): Promise<T | null>;
 }
 
+/**
+ * Absolute path to the database file.
+ *
+ * Defaults to `<cwd>/data/mun.db`. Set SQLITE_PATH to store it elsewhere —
+ * on a host, point this at a folder that survives redeploys (a persistent
+ * disk), or every deploy starts with an empty database.
+ */
 function dbFilePath(): string {
-  return process.env.SQLITE_PATH || path.join(process.cwd(), "data", "mun.db");
+  const p = process.env.SQLITE_PATH || path.join(process.cwd(), "data", "mun.db");
+  return path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
+}
+
+/** Locate sql.js's wasm binary wherever the package is actually installed. */
+function locateSqlJsFile(file: string): string {
+  try {
+    // Resolve the package entry, then its sibling dist/<file>. This follows the
+    // real install location regardless of the process working directory.
+    const pkgMain = requireFromHere.resolve("sql.js");
+    const candidate = path.join(path.dirname(pkgMain), file);
+    if (fs.existsSync(candidate)) return candidate;
+  } catch {
+    /* fall through to cwd-based lookup */
+  }
+  return path.join(process.cwd(), "node_modules", "sql.js", "dist", file);
 }
 
 let db: SqlJsDatabase | null = null;
@@ -279,20 +309,38 @@ let dirty = false;
 
 async function init(): Promise<void> {
   if (db) return;
-  const SQL = await initSqlJs({
-    // Point straight at the installed package's wasm binary — no bundler/CDN involved.
-    locateFile: (f) => path.join(process.cwd(), "node_modules", "sql.js", "dist", f),
-  });
+  const SQL = await initSqlJs({ locateFile: locateSqlJsFile });
+
   const file = dbFilePath();
-  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const dir = path.dirname(file);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    // Verify the directory is actually writable *now*, so we fail at startup
+    // with a clear message rather than on the first user write.
+    fs.accessSync(dir, fs.constants.W_OK);
+  } catch (err) {
+    throw new Error(
+      `Database directory "${dir}" is not writable. Point SQLITE_PATH at a writable, ` +
+        `persistent folder on your host. (${(err as Error).message})`
+    );
+  }
+
   const bytes = fs.existsSync(file) ? fs.readFileSync(file) : undefined;
   db = new SQL.Database(bytes);
 }
 
+/**
+ * Persist the in-memory database to disk atomically: write to a temp file and
+ * rename over the target, so a crash mid-write can never leave a truncated,
+ * unreadable .db (which would brick every subsequent boot).
+ */
 function flush(): void {
   if (!db || !dirty) return;
+  const file = dbFilePath();
+  const tmp = `${file}.tmp-${process.pid}`;
   const data = db.export();
-  fs.writeFileSync(dbFilePath(), Buffer.from(data));
+  fs.writeFileSync(tmp, Buffer.from(data));
+  fs.renameSync(tmp, file);
   dirty = false;
 }
 

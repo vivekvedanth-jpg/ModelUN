@@ -43,7 +43,7 @@ function isKind(v: unknown): v is "video" | "resource" {
   return v === "video" || v === "resource";
 }
 
-/** Strips Mongo's _id so responses match the client types in lib/content.ts. */
+/** Projects a stored resource to the exact client shape in lib/content.ts. */
 function toResource(d: ResourceDoc): ResourceDoc {
   return { id: d.id, title: d.title, type: d.type, format: d.format, desc: d.desc, url: d.url, seeded: d.seeded };
 }
