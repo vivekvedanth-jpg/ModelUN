@@ -1,5 +1,4 @@
 import { type NextRequest, NextResponse } from "next/server";
-import type { UpdateFilter } from "mongodb";
 import { experiencesCol, PLACEMENTS, type ExperienceDoc } from "@/lib/server/db";
 import {
   getSessionUser,
@@ -168,7 +167,7 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  const update: UpdateFilter<ExperienceDoc> = {};
+  const update: Record<string, unknown> = {};
   if (Object.keys(set).length > 0) update.$set = set;
   if (Object.keys(unset).length > 0) update.$unset = unset;
   if (Object.keys(update).length === 0) return NextResponse.json({ experience: doc });

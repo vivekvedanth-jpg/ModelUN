@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import {
   committeesCol, usersCol,
   type CommitteeDoc, type ScoreColumn, type CommitteeDelegate, type SpeakerEntry,
-  type VoteRecord, type VoteThreshold, type CommitteeMessage, type SessionStatus,
+  type VoteRecord, type VoteThreshold, type VoteBallot, type CommitteeMessage, type SessionStatus,
   type UserDoc,
 } from "@/lib/server/db";
 import { getSessionUser, isAdminDoc, emailPattern, fail } from "@/lib/server/session";
@@ -212,12 +212,12 @@ export async function PATCH(req: NextRequest) {
       break;
     }
     case "rename_column": {
-      const { columnId } = body as { columnId: string; label: string };
+      const { columnId } = body as { columnId: string };
       const label = ((body.label as string | undefined)?.trim()) || "New";
-      await col.updateOne(
-        { id, "columns.id": columnId },
-        { $set: { "columns.$.label": label, updatedAt: now } }
-      );
+      const fresh = await col.findOne({ id });
+      if (!fresh) break;
+      const columns = fresh.columns.map((c) => (c.id === columnId ? { ...c, label } : c));
+      await col.updateOne({ id }, { $set: { columns, updatedAt: now } });
       break;
     }
     case "remove_column": {
@@ -379,40 +379,19 @@ export async function PATCH(req: NextRequest) {
       if (!v) return fail("There's no active vote.");
       if (voteClosed(v)) return fail("Voting has closed.");
       const email = lc(me.email);
-      // One atomic aggregation-pipeline update, matched on the vote's id so a
-      // vote that was cleared or replaced between our read and this write can
-      // never be resurrected (the old TOCTOU bug). Rebuild the ballot list as
-      // "everyone but me" + my new ballot — normalising legacy object ballots
-      // to [] in the same expression.
-      const res = await col.updateOne(
-        { id, "vote.id": v.id },
-        [
-          {
-            $set: {
-              "vote.ballots": {
-                $concatArrays: [
-                  {
-                    $filter: {
-                      input: {
-                        $cond: [
-                          { $isArray: "$vote.ballots" },
-                          "$vote.ballots",
-                          [],
-                        ],
-                      },
-                      as: "b",
-                      cond: { $ne: ["$$b.email", email] },
-                    },
-                  },
-                  [{ email, choice }],
-                ],
-              },
-              updatedAt: now,
-            },
-          },
-        ]
-      );
-      if (res.matchedCount === 0) return fail("Voting has closed.");
+      // Atomic read-modify-write (col.mutate runs synchronously, so concurrent
+      // voters can never interleave — no double-count/TOCTOU races). Match on the
+      // vote's id so a vote cleared/replaced meanwhile can't be resurrected.
+      let closed = false;
+      const result = await col.mutate({ id }, (doc) => {
+        const cur = doc.vote;
+        if (!cur || cur.id !== v.id || voteClosed(cur)) { closed = true; return null; }
+        const ballots = Array.isArray(cur.ballots) ? cur.ballots : [];
+        const mine: VoteBallot = { email, choice };
+        const nextBallots: VoteBallot[] = [...ballots.filter((b) => lc(b.email) !== email), mine];
+        return { ...doc, vote: { ...cur, ballots: nextBallots }, updatedAt: now };
+      });
+      if (closed || result === null) return fail("Voting has closed.");
       break;
     }
     case "extend_vote": {
@@ -514,21 +493,19 @@ export async function PATCH(req: NextRequest) {
       if (!messageId) return fail("Missing messageId.");
       if (!emoji || !REACTION_EMOJI.includes(emoji)) return fail("Invalid reaction.");
       const email = lc(me.email);
-      const fresh = await col.findOne({ id });
-      if (!fresh) break;
-      const messages = (fresh.messages ?? []).map((m) => {
-        if (m.id !== messageId) return m;
-        const reactions = Array.isArray(m.reactions) ? m.reactions : [];
-        const existing = reactions.find(
-          (r) => r.emoji === emoji && lc(r.email) === email
-        );
-        // Toggle: remove my identical reaction, or add it.
-        const next = existing
-          ? reactions.filter((r) => !(r.emoji === emoji && lc(r.email) === email))
-          : [...reactions, { emoji, email }];
-        return { ...m, reactions: next };
+      // Atomic toggle so concurrent reactors don't clobber each other.
+      await col.mutate({ id }, (doc) => {
+        const messages = (doc.messages ?? []).map((m) => {
+          if (m.id !== messageId) return m;
+          const reactions = Array.isArray(m.reactions) ? m.reactions : [];
+          const existing = reactions.find((r) => r.emoji === emoji && lc(r.email) === email);
+          const next = existing
+            ? reactions.filter((r) => !(r.emoji === emoji && lc(r.email) === email))
+            : [...reactions, { emoji, email }];
+          return { ...m, reactions: next };
+        });
+        return { ...doc, messages, updatedAt: now };
       });
-      await col.updateOne({ id }, { $set: { messages, updatedAt: now } });
       break;
     }
     case "clear_messages": {

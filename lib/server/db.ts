@@ -1,13 +1,19 @@
 /**
- * SERVER-ONLY MongoDB connection (never import this from a client component).
+ * SERVER-ONLY data layer (never import this from a client component).
  *
- * Accounts and groups live in MongoDB Atlas so they persist across devices and
- * across Render's ephemeral filesystem. The owner account ("Admin1") is seeded
- * automatically on first connect.
+ * Data lives in an embedded SQLite database on the host's own disk (see
+ * lib/server/sqlite-store.ts) — a single file, no external database service.
+ * The store exposes a MongoDB-compatible subset, so the collection helpers and
+ * API routes read the same as before. The owner account ("Admin1") is seeded
+ * automatically on first access.
+ *
+ * The SQLite file location defaults to `<cwd>/data/mun.db` and can be overridden
+ * with the SQLITE_PATH environment variable (point this at a persistent disk
+ * path on your host).
  */
 
-import { MongoClient, type Db, type Collection } from "mongodb";
 import bcrypt from "bcryptjs";
+import { collection, type StoreCollection } from "./sqlite-store";
 
 export type Role = "owner" | "admin" | "chair" | "normal" | "guest";
 
@@ -45,29 +51,13 @@ export const OWNER_CREDENTIALS = {
 export const ALL_GROUPS = "all";
 
 declare global {
-  // Cache the client across hot-reloads / lambda invocations.
-  // eslint-disable-next-line no-var
-  var _munMongoClient: Promise<MongoClient> | undefined;
+  // Cache the one-time owner seed across hot-reloads.
   // eslint-disable-next-line no-var
   var _munSeeded: Promise<void> | undefined;
 }
 
-function getClient(): Promise<MongoClient> {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) {
-    throw new Error(
-      "MONGODB_URI is not set — add your MongoDB Atlas connection string to the environment."
-    );
-  }
-  if (!globalThis._munMongoClient) {
-    globalThis._munMongoClient = new MongoClient(uri).connect();
-  }
-  return globalThis._munMongoClient;
-}
-
-async function seed(db: Db): Promise<void> {
-  const users = db.collection<UserDoc>("users");
-  await users.createIndex({ email: 1 }, { unique: true });
+async function seed(): Promise<void> {
+  const users = collection<UserDoc>("users");
   const existing = await users.findOne({ email: OWNER_CREDENTIALS.email });
   if (!existing) {
     await users.insertOne({
@@ -79,26 +69,25 @@ async function seed(db: Db): Promise<void> {
   }
 }
 
-export async function getDb(): Promise<Db> {
-  const client = await getClient();
-  const db = client.db(process.env.MONGODB_DB || "mun");
+/** Ensure the owner account exists before serving any request. */
+async function ready(): Promise<void> {
   if (!globalThis._munSeeded) {
-    globalThis._munSeeded = seed(db).catch((err) => {
-      // Don't cache a failed seed — let the next request retry.
-      globalThis._munSeeded = undefined;
+    globalThis._munSeeded = seed().catch((err) => {
+      globalThis._munSeeded = undefined; // don't cache a failed seed
       throw err;
     });
   }
   await globalThis._munSeeded;
-  return db;
 }
 
-export async function usersCol(): Promise<Collection<UserDoc>> {
-  return (await getDb()).collection<UserDoc>("users");
+export async function usersCol(): Promise<StoreCollection<UserDoc>> {
+  await ready();
+  return collection<UserDoc>("users");
 }
 
-export async function groupsCol(): Promise<Collection<GroupDoc>> {
-  return (await getDb()).collection<GroupDoc>("groups");
+export async function groupsCol(): Promise<StoreCollection<GroupDoc>> {
+  await ready();
+  return collection<GroupDoc>("groups");
 }
 
 /** Public (password-free) view of an account. */
@@ -160,8 +149,9 @@ export interface ExperienceDoc {
   createdAt: number;
 }
 
-export async function experiencesCol(): Promise<Collection<ExperienceDoc>> {
-  return (await getDb()).collection<ExperienceDoc>("experiences");
+export async function experiencesCol(): Promise<StoreCollection<ExperienceDoc>> {
+  await ready();
+  return collection<ExperienceDoc>("experiences");
 }
 
 /* ──────────────────────────── Q&A collection ─────────────────────────────── */
@@ -177,8 +167,9 @@ export interface QuestionDoc {
   answeredAt?: number;
 }
 
-export async function questionsCol(): Promise<Collection<QuestionDoc>> {
-  return (await getDb()).collection<QuestionDoc>("questions");
+export async function questionsCol(): Promise<StoreCollection<QuestionDoc>> {
+  await ready();
+  return collection<QuestionDoc>("questions");
 }
 
 /* ─────────────────────────── Committee collection ───────────────────────── */
@@ -256,8 +247,9 @@ export interface CommitteeDoc {
   updatedAt: number;
 }
 
-export async function committeesCol(): Promise<Collection<CommitteeDoc>> {
-  return (await getDb()).collection<CommitteeDoc>("committees");
+export async function committeesCol(): Promise<StoreCollection<CommitteeDoc>> {
+  await ready();
+  return collection<CommitteeDoc>("committees");
 }
 
 /* ────────────────────────── Committee files collection ───────────────────── */
@@ -281,8 +273,9 @@ export interface CommitteeFileDoc {
   createdAt: number;
 }
 
-export async function committeeFilesCol(): Promise<Collection<CommitteeFileDoc>> {
-  return (await getDb()).collection<CommitteeFileDoc>("committee_files");
+export async function committeeFilesCol(): Promise<StoreCollection<CommitteeFileDoc>> {
+  await ready();
+  return collection<CommitteeFileDoc>("committee_files");
 }
 
 /* ─────────────────────────── Contact collection ─────────────────────────── */
@@ -291,8 +284,9 @@ export interface MessageDoc {
   id: string; name: string; email: string; message: string; createdAt: number;
 }
 
-export async function messagesCol(): Promise<Collection<MessageDoc>> {
-  return (await getDb()).collection<MessageDoc>("messages");
+export async function messagesCol(): Promise<StoreCollection<MessageDoc>> {
+  await ready();
+  return collection<MessageDoc>("messages");
 }
 
 /* ──────────────────────────── Content collections ───────────────────────── */
@@ -308,12 +302,14 @@ export interface VideoDoc {
   duration: string; url?: string; seeded?: boolean;
 }
 
-export async function resourcesCol(): Promise<Collection<ResourceDoc>> {
-  return (await getDb()).collection<ResourceDoc>("resources");
+export async function resourcesCol(): Promise<StoreCollection<ResourceDoc>> {
+  await ready();
+  return collection<ResourceDoc>("resources");
 }
 
-export async function videosCol(): Promise<Collection<VideoDoc>> {
-  return (await getDb()).collection<VideoDoc>("videos");
+export async function videosCol(): Promise<StoreCollection<VideoDoc>> {
+  await ready();
+  return collection<VideoDoc>("videos");
 }
 
 /* ──────────────────────────── Documents collection ──────────────────────── */
@@ -323,14 +319,16 @@ export interface ResolutionDocDb {
   createdAt: number; updatedAt: number;
 }
 
-export async function documentsCol(): Promise<Collection<ResolutionDocDb>> {
-  return (await getDb()).collection<ResolutionDocDb>("documents");
+export async function documentsCol(): Promise<StoreCollection<ResolutionDocDb>> {
+  await ready();
+  return collection<ResolutionDocDb>("documents");
 }
 
 /* ──────────────────────────── Settings collection ───────────────────────── */
 
 export interface SettingDoc { key: string; value: unknown; }
 
-export async function settingsCol(): Promise<Collection<SettingDoc>> {
-  return (await getDb()).collection<SettingDoc>("settings");
+export async function settingsCol(): Promise<StoreCollection<SettingDoc>> {
+  await ready();
+  return collection<SettingDoc>("settings");
 }

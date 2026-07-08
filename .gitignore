@@ -33,3 +33,9 @@ next-env.d.ts
 # editor
 .vscode/*
 !.vscode/extensions.json
+
+# SQLite database (app data — do not commit)
+/data/
+*.db
+*.db-shm
+*.db-wal

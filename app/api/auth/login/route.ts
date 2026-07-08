@@ -25,11 +25,11 @@ export async function POST(req: NextRequest) {
     const users = await usersCol();
     user = await users.findOne({ email });
   } catch (err) {
-    // The database is unreachable (e.g. MongoDB Atlas TLS/allow-list/network).
-    // Surface a clear message instead of a blank 500 ("Request failed").
-    console.error("[login] database connection failed:", err);
+    // The local SQLite database couldn't be opened (e.g. the data directory
+    // isn't writable). Surface a clear message instead of a blank 500.
+    console.error("[login] database error:", err);
     return fail(
-      "Can't reach the database. If you're running locally, your network may be blocking MongoDB — check your MongoDB Atlas Network Access allow-list (add 0.0.0.0/0) or try a different network.",
+      "Can't open the database. Make sure the app's data directory is writable (SQLITE_PATH), then try again.",
       503
     );
   }
