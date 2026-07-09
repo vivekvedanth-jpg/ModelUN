@@ -22,14 +22,29 @@ function tryWrite(dir: string): { dir: string; writable: boolean; error?: string
   }
 }
 
+function safeList(dir: string): string[] | null {
+  try {
+    return fs.existsSync(dir) ? fs.readdirSync(dir) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function GET() {
   const cwd = process.cwd();
   const home = process.env.HOME || "";
+
+  // domains/letsmun.com is 2 levels below the real account root on Hostinger
+  // shared hosting (/home/u######). That account root is shared across every
+  // site/service on the account, so a single site's git redeploy should never
+  // touch it — the best candidate for truly persistent storage.
+  const accountRoot = path.resolve(cwd, "..", "..", "..");
 
   const candidates = [
     path.join(cwd, "data"),
     path.resolve(cwd, "..", "persistent-data"),
     path.resolve(cwd, "..", "..", "persistent-data"),
+    path.join(accountRoot, "persistent-data"),
     home ? path.join(home, "persistent-data") : "",
   ].filter(Boolean);
 
@@ -37,9 +52,12 @@ export async function GET() {
     cwd,
     home,
     dirname: __dirname,
-    listCwd: fs.existsSync(cwd) ? fs.readdirSync(cwd) : null,
-    listParent: fs.existsSync(path.resolve(cwd, "..")) ? fs.readdirSync(path.resolve(cwd, "..")) : null,
-    listHome: home && fs.existsSync(home) ? fs.readdirSync(home) : null,
+    accountRoot,
+    listCwd: safeList(cwd),
+    listParent: safeList(path.resolve(cwd, "..")),
+    listGrandparent: safeList(path.resolve(cwd, "..", "..")),
+    listAccountRoot: safeList(accountRoot),
+    listHome: home ? safeList(home) : null,
     writeTests: candidates.map(tryWrite),
   });
 }
