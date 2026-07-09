@@ -17,10 +17,48 @@ const playfair = Playfair_Display({
   display: "swap",
 });
 
+const SITE_URL = "https://letsmun.com";
+const SITE_NAME = "Let's MUN";
+const DESCRIPTION =
+  "A learning platform for student diplomats. Watch lessons, study resources, time your caucuses, and practice public speaking through Model United Nations.";
+
 export const metadata: Metadata = {
-  title: "Let's MUN — Learn the Art of Diplomacy",
-  description:
-    "A learning platform for student diplomats. Watch lessons, study resources, time your caucuses, and practice public speaking through Model United Nations.",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "Let's MUN — Learn the Art of Diplomacy",
+    template: `%s | ${SITE_NAME}`,
+  },
+  description: DESCRIPTION,
+  keywords: [
+    "Model United Nations",
+    "MUN",
+    "MUN training",
+    "MUN for beginners",
+    "learn Model UN",
+    "public speaking for students",
+    "diplomacy skills",
+    "resolution writing",
+    "rules of procedure",
+  ],
+  alternates: { canonical: "/" },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true },
+  },
+  openGraph: {
+    type: "website",
+    url: SITE_URL,
+    siteName: SITE_NAME,
+    title: "Let's MUN — Learn the Art of Diplomacy",
+    description: DESCRIPTION,
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Let's MUN — Learn the Art of Diplomacy",
+    description: DESCRIPTION,
+  },
 };
 
 export default function RootLayout({

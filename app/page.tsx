@@ -71,9 +71,36 @@ const TOOLS = [
   { icon: SparkleIcon, title: "MUN Assistant", body: "Your AI-powered diplomacy practice partner.", href: "/model-diplomat" },
 ];
 
+const JSON_LD = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      name: "Let's MUN",
+      url: "https://letsmun.com",
+      description:
+        "A learning platform for student diplomats practicing Model United Nations.",
+      email: "info@letsmun.com",
+    },
+    {
+      "@type": "WebSite",
+      name: "Let's MUN",
+      url: "https://letsmun.com",
+      description:
+        "Learn the art of diplomacy: public speaking, negotiation, research and resolution writing for Model United Nations.",
+    },
+  ],
+};
+
 export default function HomePage() {
   return (
     <>
+      <script
+        type="application/ld+json"
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
+      />
+
       {/* ---------- Hero ---------- */}
       <section className="relative overflow-hidden bg-navy-radial text-white">
         <div className="absolute -right-24 top-0 h-96 w-96 rounded-full bg-gold-500/10 blur-3xl" />

@@ -1,5 +1,13 @@
+import type { Metadata } from "next";
 import PageHeader from "@/components/PageHeader";
 import ContactForm from "@/components/ContactForm";
+
+export const metadata: Metadata = {
+  title: "Contact Us",
+  description:
+    "Questions about Let's MUN or how to get a delegate account for your Model United Nations club? Send us a message.",
+  alternates: { canonical: "/contact" },
+};
 
 // Public page — no <Protected> wrapper, so visitors without an account can reach it.
 export default function ContactPage() {
