@@ -84,11 +84,12 @@ export async function POST(req: NextRequest) {
   const password = body.password ?? "";
   const role = body.role ?? "normal";
 
-  if (role === "admin" || role === "chair") {
+  // Admins may create chairs for their own club; only the Owner creates admins.
+  if (role === "admin") {
     if (!isOwnerDoc(me)) {
-      return fail("Only the Owner can create admin or chair accounts.", 403);
+      return fail("Only the Owner can create admin accounts.", 403);
     }
-  } else if (role !== "normal" && role !== "guest") {
+  } else if (role !== "chair" && role !== "normal" && role !== "guest") {
     return fail("Invalid role.");
   }
   if (!EMAIL_RE.test(email)) return fail("Please enter a valid email address.");
@@ -101,17 +102,17 @@ export async function POST(req: NextRequest) {
     return fail("An account with that email already exists.", 409);
   }
 
-  // Work out the group the new account belongs to (guests behave like normals).
+  // Work out the group the new account belongs to. Chairs are scoped to a club
+  // like everyone else, so a group-scoped admin's chairs land in that admin's
+  // group and show up alongside its delegates.
   const actorCanAssign = canViewAllGroups(me!);
   const picked =
     body.groupId && body.groupId.trim() ? body.groupId.trim() : undefined;
   let groupId: string | undefined;
-  if (role === "chair") {
-    groupId = undefined;
-  } else if (actorCanAssign) {
+  if (actorCanAssign) {
     groupId = role === "admin" ? picked ?? ALL_GROUPS : picked;
   } else {
-    groupId = me!.groupId; // group-scoped admin → new delegates join their group
+    groupId = me!.groupId; // group-scoped admin → new accounts join their group
   }
 
   // Only guests carry a self-destruct timestamp.
@@ -233,8 +234,17 @@ export async function DELETE(req: NextRequest) {
   if (!target) return fail("That account no longer exists.", 404);
   if (target.role === "owner") return fail("The Owner account cannot be deleted.");
   if (target.email === me!.email) return fail("You cannot delete your own account.");
-  if ((target.role === "admin" || target.role === "chair") && !isOwnerDoc(me)) {
-    return fail("Only the Owner can delete admin or chair accounts.", 403);
+  if (target.role === "admin" && !isOwnerDoc(me)) {
+    return fail("Only the Owner can delete admin accounts.", 403);
+  }
+  // Admins manage the chairs of their own club; the Owner manages any chair.
+  if (
+    target.role === "chair" &&
+    !isOwnerDoc(me) &&
+    !canViewAllGroups(me!) &&
+    target.groupId !== me!.groupId
+  ) {
+    return fail("You can only manage chairs in your own group.", 403);
   }
 
   await users.deleteOne({ email });

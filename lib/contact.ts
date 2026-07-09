@@ -1,4 +1,4 @@
-export const CONTACT_RECIPIENT = "gusty_dioxin4o@icloud.com";
+export const CONTACT_RECIPIENT = "info@letsmun.com";
 
 export interface ContactMessage {
   id: string;

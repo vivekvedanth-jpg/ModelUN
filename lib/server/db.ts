@@ -58,15 +58,17 @@ declare global {
 
 async function seed(): Promise<void> {
   const users = collection<UserDoc>("users");
-  const existing = await users.findOne({ email: OWNER_CREDENTIALS.email });
-  if (!existing) {
-    await users.insertOne({
+  // Atomic: several worker processes boot at once, and a findOne-then-insertOne
+  // would let more than one of them insert a second owner.
+  await users.insertIfMissing(
+    { email: OWNER_CREDENTIALS.email },
+    {
       email: OWNER_CREDENTIALS.email,
       passwordHash: await bcrypt.hash(OWNER_CREDENTIALS.password, 10),
       role: "owner",
       createdAt: Date.now(),
-    });
-  }
+    }
+  );
 }
 
 /** Ensure the owner account exists before serving any request. */

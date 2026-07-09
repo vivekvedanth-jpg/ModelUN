@@ -39,6 +39,43 @@ import {
 const GUEST_DURATIONS = [3, 7, 14, 30] as const;
 const DAY_MS = 86_400_000;
 
+type NewRole = "admin" | "chair" | "normal" | "guest";
+
+/** The account types offered in the create form, with what each one can do. */
+const ROLE_OPTIONS: {
+  value: NewRole;
+  label: string;
+  desc: string;
+  Icon: typeof UsersIcon;
+  ownerOnly?: boolean;
+}[] = [
+  {
+    value: "normal",
+    label: "Delegate",
+    desc: "A student. Logs MUN experience and joins committees.",
+    Icon: UsersIcon,
+  },
+  {
+    value: "chair",
+    label: "Chair",
+    desc: "Runs a committee and scores its delegates.",
+    Icon: ScaleIcon,
+  },
+  {
+    value: "guest",
+    label: "Guest",
+    desc: "Visiting delegate. Auto-deleted when access expires.",
+    Icon: ClockIcon,
+  },
+  {
+    value: "admin",
+    label: "Admin",
+    desc: "Manages accounts. Owner only.",
+    Icon: ShieldIcon,
+    ownerOnly: true,
+  },
+];
+
 function roleBadgeClass(role: Role) {
   switch (role) {
     case "owner":
@@ -84,10 +121,8 @@ export default function AccountManager() {
   // New-account form state.
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  // Only the owner can create admins/chairs, so default to "normal" for everyone.
-  const [newRole, setNewRole] = useState<"admin" | "chair" | "normal" | "guest">(
-    "normal"
-  );
+  // Admins may create chairs for their own club; only the owner creates admins.
+  const [newRole, setNewRole] = useState<NewRole>("normal");
   const [newGroup, setNewGroup] = useState("");
   const [newGuestDays, setNewGuestDays] = useState(GUEST_DEFAULT_DAYS);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -148,18 +183,28 @@ export default function AccountManager() {
     }
   }
 
+  /** Switching type resets the group so a stale pick can't leak across roles. */
+  function pickRole(role: NewRole) {
+    setNewRole(role);
+    setNewGroup(role === "admin" ? ALL_GROUPS : "");
+  }
+
   function handleCreate(e: FormEvent) {
     e.preventDefault();
-    const groupArg = newRole === "chair" ? undefined : newGroup || undefined;
     const expiresArg =
       newRole === "guest" ? Date.now() + newGuestDays * DAY_MS : undefined;
     const created = newEmail.trim().toLowerCase();
     run(async () => {
-      await createAccount(newEmail, newPassword, newRole, groupArg, expiresArg);
+      await createAccount(
+        newEmail,
+        newPassword,
+        newRole,
+        newGroup || undefined,
+        expiresArg
+      );
       setNewEmail("");
       setNewPassword("");
-      setNewRole("normal");
-      setNewGroup("");
+      pickRole("normal");
       setNewGuestDays(GUEST_DEFAULT_DAYS);
     }, `Account "${created}" created.`);
   }
@@ -170,10 +215,10 @@ export default function AccountManager() {
       <div id="create-account" className="scroll-mt-24">
         <h2 className="text-2xl font-bold text-navy-900">Create an account</h2>
         <p className="mt-1 text-navy-600">
-          There is no public sign-up — new delegates can only be added here.
+          There is no public sign-up — new accounts can only be added here.
           {owner
-            ? " As the Owner you can also create admin and chair accounts."
-            : " Only the Owner can create admin and chair accounts."}
+            ? " As the Owner you can create any account type, for any group."
+            : " You can add delegates, guests and chairs to your group. Only the Owner creates admins."}
         </p>
 
         <form
@@ -212,76 +257,47 @@ export default function AccountManager() {
             </div>
           </div>
 
-          <div className="mt-4">
+          <div className="mt-5">
             <span className="label">Account type</span>
-            <div className="mt-1 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setNewRole("normal");
-                  setNewGroup("");
-                }}
-                className={`badge px-3 py-1.5 ${
-                  newRole === "normal"
-                    ? "bg-navy-800 text-white"
-                    : "bg-navy-100 text-navy-700"
-                }`}
-              >
-                Delegate (normal)
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setNewRole("guest");
-                  setNewGroup("");
-                }}
-                className={`badge px-3 py-1.5 ${
-                  newRole === "guest"
-                    ? "bg-amber-500 text-white"
-                    : "bg-navy-100 text-navy-700"
-                }`}
-              >
-                <ClockIcon width={14} height={14} /> Guest
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setNewRole("chair");
-                  setNewGroup("");
-                }}
-                disabled={!owner}
-                title={owner ? "" : "Only the Owner can create chairs"}
-                className={`badge px-3 py-1.5 ${
-                  newRole === "chair"
-                    ? "bg-emerald-500 text-white"
-                    : "bg-navy-100 text-navy-700"
-                } ${!owner ? "cursor-not-allowed opacity-50" : ""}`}
-              >
-                <ScaleIcon width={14} height={14} /> Chair
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setNewRole("admin");
-                  setNewGroup(ALL_GROUPS);
-                }}
-                disabled={!owner}
-                title={owner ? "" : "Only the Owner can create admins"}
-                className={`badge px-3 py-1.5 ${
-                  newRole === "admin"
-                    ? "bg-gold-500 text-navy-900"
-                    : "bg-navy-100 text-navy-700"
-                } ${!owner ? "cursor-not-allowed opacity-50" : ""}`}
-              >
-                <ShieldIcon width={14} height={14} /> Admin
-              </button>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              {ROLE_OPTIONS.map(({ value, label, desc, Icon, ownerOnly }) => {
+                const locked = ownerOnly && !owner;
+                const selected = newRole === value;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => pickRole(value)}
+                    disabled={locked}
+                    title={locked ? "Only the Owner can create admins" : ""}
+                    aria-pressed={selected}
+                    className={`flex items-start gap-3 rounded-xl border-2 p-3 text-left transition ${
+                      selected
+                        ? "border-navy-800 bg-white shadow-sm"
+                        : "border-navy-100 bg-white/60 hover:border-navy-300"
+                    } ${locked ? "cursor-not-allowed opacity-50" : ""}`}
+                  >
+                    <span
+                      className={`mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${
+                        selected
+                          ? "bg-navy-800 text-gold-400"
+                          : "bg-navy-50 text-navy-500"
+                      }`}
+                    >
+                      <Icon width={16} height={16} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block font-semibold text-navy-900">
+                        {label}
+                      </span>
+                      <span className="block text-xs leading-snug text-navy-500">
+                        {desc}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-            {owner && (
-              <p className="mt-2 text-xs text-navy-500">
-                Chairs get a private Committee Scoring page to grade the delegates
-                in their committee.
-              </p>
-            )}
           </div>
 
           {/* Guest expiry */}
@@ -310,48 +326,49 @@ export default function AccountManager() {
           )}
 
           {/* Group assignment */}
-          {newRole !== "chair" && (
-            <div className="mt-4">
-              <span className="label">Group</span>
-              {canAssignGroups ? (
-                <>
-                  <select
-                    value={newGroup}
-                    onChange={(e) => setNewGroup(e.target.value)}
-                    className="input-field"
-                  >
-                    {newRole === "admin" && (
-                      <option value={ALL_GROUPS}>All groups (full access)</option>
-                    )}
-                    {(newRole === "normal" || newRole === "guest") && (
-                      <option value="">No group</option>
-                    )}
-                    {groups.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.name}
-                      </option>
-                    ))}
-                  </select>
-                  {newRole === "admin" && (
-                    <p className="mt-1.5 text-xs text-navy-500">
-                      Pick a group to limit this admin to its members, or all
-                      groups for full access.
-                    </p>
+          <div className="mt-4">
+            <span className="label">
+              {newRole === "chair" ? "MUN club (group)" : "Group"}
+            </span>
+            {canAssignGroups ? (
+              <>
+                <select
+                  value={newGroup}
+                  onChange={(e) => setNewGroup(e.target.value)}
+                  className="input-field"
+                >
+                  {newRole === "admin" ? (
+                    <option value={ALL_GROUPS}>All groups (full access)</option>
+                  ) : (
+                    <option value="">No group</option>
                   )}
-                  {groups.length === 0 && (
-                    <p className="mt-1.5 text-xs text-navy-500">
-                      No groups yet — create one on the Groups page first.
-                    </p>
-                  )}
-                </>
-              ) : (
-                <p className="text-sm text-navy-600">
-                  New delegates join your group:{" "}
-                  <span className="font-semibold">{groupLabel(myGroupId)}</span>
+                  {groups.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-xs text-navy-500">
+                  {newRole === "admin"
+                    ? "Pick a group to limit this admin to its members, or all groups for full access."
+                    : newRole === "chair"
+                    ? "The club this chair belongs to. They'll appear under it on the Groups page."
+                    : "Which club, school or university this account belongs to."}
                 </p>
-              )}
-            </div>
-          )}
+                {groups.length === 0 && (
+                  <p className="mt-1.5 text-xs text-navy-500">
+                    No groups yet — create one on the Groups page first.
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-navy-600">
+                {newRole === "chair" ? "This chair" : "This account"} joins your
+                group:{" "}
+                <span className="font-semibold">{groupLabel(myGroupId)}</span>
+              </p>
+            )}
+          </div>
 
           <button type="submit" className="btn-gold mt-5">
             <PlusIcon width={16} height={16} /> Create account
@@ -381,7 +398,7 @@ export default function AccountManager() {
             : "Accounts in your group. "}
           {owner
             ? "You can change roles, groups, and remove accounts."
-            : "You can remove delegate accounts; only the Owner manages admins and groups."}
+            : "You can remove delegates, guests and your group's chairs; only the Owner manages admins and groups."}
         </p>
 
         <div className="mt-6 overflow-hidden rounded-2xl border border-navy-100 bg-white">
@@ -398,11 +415,15 @@ export default function AccountManager() {
                 const isSelf =
                   u.email.toLowerCase() === user?.email.toLowerCase();
                 const targetIsOwner = u.role === "owner";
-                // Who can delete this row?
+                // Who can delete this row? Admins manage delegates, guests and
+                // the chairs of the group they can see; only the Owner removes admins.
                 const canDelete =
                   !targetIsOwner &&
                   !isSelf &&
-                  (owner || u.role === "normal" || u.role === "guest");
+                  (owner ||
+                    u.role === "normal" ||
+                    u.role === "guest" ||
+                    u.role === "chair");
                 const exps = experiencesFor(u.email);
                 const isExpanded = expandedEmail === u.email;
                 const fullName = u.profile.fullName?.trim();
@@ -537,9 +558,10 @@ export default function AccountManager() {
                             ))}
                           </select>
                         )}
-                        {/* Assign a group — Owner only, for admins, delegates & guests */}
+                        {/* Assign a group — Owner only; every non-owner role has one */}
                         {owner &&
                           (u.role === "admin" ||
+                            u.role === "chair" ||
                             u.role === "normal" ||
                             u.role === "guest") && (
                             <select

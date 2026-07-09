@@ -9,10 +9,26 @@ import {
   TrashIcon,
   ShieldIcon,
   CrownIcon,
+  ScaleIcon,
 } from "./icons";
 
 function displayName(a: AccountDetail): string {
   return a.profile.fullName?.trim() || a.email.split("@")[0];
+}
+
+/** Avatar colour per role, so a group's members are scannable at a glance. */
+function avatarClass(role: AccountDetail["role"]): string {
+  if (role === "admin") return "bg-gold-500 text-navy-900";
+  if (role === "chair") return "bg-emerald-500 text-white";
+  return "bg-navy-800 text-white";
+}
+
+/** "3 students · 1 chair · 2 admins", skipping whatever is zero. */
+function summarize(counts: { label: string; n: number }[]): string {
+  const parts = counts
+    .filter((c) => c.n > 0)
+    .map((c) => `${c.n} ${c.n === 1 ? c.label : `${c.label}s`}`);
+  return parts.length ? parts.join(" · ") : "No members yet";
 }
 
 export default function GroupManager() {
@@ -76,9 +92,9 @@ export default function GroupManager() {
     return (
       <div className="flex items-center gap-3 rounded-xl border border-navy-100 bg-white px-4 py-2.5">
         <span
-          className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-            a.role === "admin" ? "bg-gold-500 text-navy-900" : "bg-navy-800 text-white"
-          }`}
+          className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold ${avatarClass(
+            a.role
+          )}`}
         >
           {displayName(a).slice(0, 1).toUpperCase()}
         </span>
@@ -134,7 +150,7 @@ export default function GroupManager() {
       <div>
         <h2 className="text-2xl font-bold text-navy-900">Groups</h2>
         <p className="mt-1 text-navy-600">
-          Click a group to see its admins and students.
+          Click a group to see its admins, chairs and students.
         </p>
 
         {groups.length === 0 ? (
@@ -153,6 +169,7 @@ export default function GroupManager() {
             {groups.map((g) => {
               const members = accounts.filter((a) => a.groupId === g.id);
               const admins = members.filter((a) => a.role === "admin");
+              const chairs = members.filter((a) => a.role === "chair");
               const students = members.filter((a) => a.role === "normal");
               const isOpen = expandedId === g.id;
               return (
@@ -171,10 +188,11 @@ export default function GroupManager() {
                             {g.name}
                           </div>
                           <div className="text-xs text-navy-500">
-                            {students.length}{" "}
-                            {students.length === 1 ? "student" : "students"} ·{" "}
-                            {admins.length}{" "}
-                            {admins.length === 1 ? "admin" : "admins"}
+                            {summarize([
+                              { label: "student", n: students.length },
+                              { label: "chair", n: chairs.length },
+                              { label: "admin", n: admins.length },
+                            ])}
                           </div>
                         </div>
                       </button>
@@ -199,6 +217,23 @@ export default function GroupManager() {
                           ) : (
                             <div className="grid gap-2 sm:grid-cols-2">
                               {admins.map((a) => (
+                                <MemberRow key={a.email} a={a} />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-navy-500">
+                            <ScaleIcon width={14} height={14} /> Chairs
+                          </p>
+                          {chairs.length === 0 ? (
+                            <p className="text-sm text-navy-500">
+                              No chairs in this group yet — add one from Delegate
+                              Affairs.
+                            </p>
+                          ) : (
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              {chairs.map((a) => (
                                 <MemberRow key={a.email} a={a} />
                               ))}
                             </div>

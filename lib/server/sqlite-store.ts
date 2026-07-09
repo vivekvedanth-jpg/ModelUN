@@ -267,6 +267,12 @@ export interface StoreCollection<T> {
   countDocuments(filter?: Filter): Promise<number>;
   createIndex(): Promise<void>;
   /**
+   * Insert `doc` only if nothing matches `filter`, as one atomic locked step.
+   * Returns true if it inserted. Use this instead of findOne-then-insertOne,
+   * which races across worker processes.
+   */
+  insertIfMissing(filter: Filter, doc: T): Promise<boolean>;
+  /**
    * Atomic read-modify-write. `mutator` receives the first matching doc and
    * returns the replacement (or null to leave it unchanged). Runs entirely
    * synchronously, so concurrent callers can never interleave — use this for
@@ -315,22 +321,57 @@ function locateSqlJsFile(file: string): string {
   return path.join(process.cwd(), "node_modules", "sql.js", "dist", file);
 }
 
-let db: SqlJsDatabase | null = null;
-let ready: Promise<void> | null = null;
-/** Serializes every store call so reads/writes never interleave (single writer at a time). */
+/**
+ * MULTI-PROCESS SAFETY
+ * --------------------
+ * The host (LiteSpeed/Hostinger) runs several Node worker processes against the
+ * same database file. A long-lived in-memory copy per process is therefore
+ * unsafe: worker A inserts a user and writes the file, then worker B — still
+ * holding the snapshot it loaded at boot — exports its stale copy over the top
+ * and the new user vanishes. (The seeded owner appeared to "survive" only
+ * because every worker re-seeds it on boot.)
+ *
+ * So we never keep a durable in-memory database. Every operation:
+ *   1. takes a cross-process lock (an O_EXCL lockfile next to the db),
+ *   2. reads the current file from disk,
+ *   3. runs, and — if it wrote — saves atomically (temp file + rename),
+ *   4. releases the lock.
+ *
+ * Reads may reuse a cached parse while the file's mtime+size are unchanged;
+ * writes always re-read first, so no worker can ever clobber another's data.
+ */
+
+type SqlJsStatic = Awaited<ReturnType<typeof initSqlJs>>;
+
+let SQL: SqlJsStatic | null = null;
+let sqlReady: Promise<void> | null = null;
+/** Serializes calls within this process (the lockfile serializes across them). */
 let queue: Promise<unknown> = Promise.resolve();
-let dirty = false;
+/** Read-cache, valid only while the file on disk is untouched. */
+let cache: { db: SqlJsDatabase; mtimeMs: number; size: number } | null = null;
 
-async function init(): Promise<void> {
-  if (db) return;
-  const SQL = await initSqlJs({ locateFile: locateSqlJsFile });
+const LOCK_STALE_MS = 10_000;
+const LOCK_TIMEOUT_MS = 15_000;
 
-  const file = dbFilePath();
-  const dir = path.dirname(file);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function initSql(): Promise<void> {
+  if (SQL) return;
+  if (!sqlReady) {
+    sqlReady = initSqlJs({ locateFile: locateSqlJsFile })
+      .then((mod) => {
+        SQL = mod;
+      })
+      .catch((err) => {
+        sqlReady = null; // don't cache a failed init
+        throw err;
+      });
+  }
+  await sqlReady;
+
+  const dir = path.dirname(dbFilePath());
   try {
     fs.mkdirSync(dir, { recursive: true });
-    // Verify the directory is actually writable *now*, so we fail at startup
-    // with a clear message rather than on the first user write.
     fs.accessSync(dir, fs.constants.W_OK);
   } catch (err) {
     throw new Error(
@@ -338,45 +379,96 @@ async function init(): Promise<void> {
         `persistent folder on your host. (${(err as Error).message})`
     );
   }
-
-  const bytes = fs.existsSync(file) ? fs.readFileSync(file) : undefined;
-  db = new SQL.Database(bytes);
 }
 
-/**
- * Persist the in-memory database to disk atomically: write to a temp file and
- * rename over the target, so a crash mid-write can never leave a truncated,
- * unreadable .db (which would brick every subsequent boot).
- */
-function flush(): void {
-  if (!db || !dirty) return;
+/** Take the cross-process lock, clearing it if a crashed worker left it behind. */
+async function acquireLock(): Promise<number> {
+  const lock = `${dbFilePath()}.lock`;
+  const deadline = Date.now() + LOCK_TIMEOUT_MS;
+  for (;;) {
+    try {
+      return fs.openSync(lock, "wx");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      try {
+        // A lockfile older than LOCK_STALE_MS means its holder died mid-write.
+        if (Date.now() - fs.statSync(lock).mtimeMs > LOCK_STALE_MS) {
+          fs.rmSync(lock, { force: true });
+          continue;
+        }
+      } catch {
+        continue; // the holder released it between our open and stat
+      }
+      if (Date.now() > deadline) throw new Error("Timed out waiting for the database lock.");
+      await sleep(20);
+    }
+  }
+}
+
+function releaseLock(fd: number): void {
+  try {
+    fs.closeSync(fd);
+  } finally {
+    fs.rmSync(`${dbFilePath()}.lock`, { force: true });
+  }
+}
+
+/** Parse the database from disk (reusing the cache when the file is unchanged). */
+function loadDb(force: boolean): SqlJsDatabase {
+  const file = dbFilePath();
+  let st: fs.Stats | null = null;
+  try {
+    st = fs.statSync(file);
+  } catch {
+    /* no file yet — start empty */
+  }
+  if (!force && cache && st && cache.mtimeMs === st.mtimeMs && cache.size === st.size) {
+    return cache.db;
+  }
+  cache?.db.close();
+  cache = null;
+  const db = new (SQL as SqlJsStatic).Database(st ? fs.readFileSync(file) : undefined);
+  cache = st ? { db, mtimeMs: st.mtimeMs, size: st.size } : { db, mtimeMs: -1, size: -1 };
+  return db;
+}
+
+/** Write the database out atomically, so a crash can never truncate the file. */
+function saveDb(db: SqlJsDatabase): void {
   const file = dbFilePath();
   const tmp = `${file}.tmp-${process.pid}`;
-  const data = db.export();
-  fs.writeFileSync(tmp, Buffer.from(data));
+  fs.writeFileSync(tmp, Buffer.from(db.export()));
   fs.renameSync(tmp, file);
-  dirty = false;
+  const st = fs.statSync(file);
+  cache = { db, mtimeMs: st.mtimeMs, size: st.size };
 }
 
-/** Run `fn` against the live db, serialized after all prior calls; flushes to disk if it wrote. */
+/** Run `fn` against the database, serialized within and across processes. */
 function withDb<R>(fn: (d: SqlJsDatabase) => R, mutates: boolean): Promise<R> {
   const task = queue.then(async () => {
-    if (!ready) ready = init();
-    await ready;
-    const result = fn(db as SqlJsDatabase);
-    if (mutates) { dirty = true; flush(); }
-    return result;
+    await initSql();
+    const fd = await acquireLock();
+    try {
+      // Writers must never act on a cached parse — another worker may have
+      // written since we last looked.
+      const db = loadDb(mutates);
+      const result = fn(db);
+      if (mutates) saveDb(db);
+      return result;
+    } finally {
+      releaseLock(fd);
+    }
   });
   queue = task.catch(() => {}); // one failed op must not wedge the queue
   return task as Promise<R>;
 }
 
-const knownTables = new Set<string>();
-
+/**
+ * Not memoized: each operation may act on a database freshly parsed from disk,
+ * so a "we already created this" cache could skip the CREATE for a db object
+ * that doesn't have the table yet. IF NOT EXISTS is cheap.
+ */
 function ensureTable(d: SqlJsDatabase, name: string): void {
-  if (knownTables.has(name)) return;
   d.run(`CREATE TABLE IF NOT EXISTS "${name}" (rowid INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT NOT NULL)`);
-  knownTables.add(name);
 }
 
 /** Run a SELECT and return every row as plain objects. */
@@ -497,6 +589,14 @@ class SqliteCollection<T> implements StoreCollection<T> {
     }, true);
   }
 
+  async insertIfMissing(filter: Filter, doc: T): Promise<boolean> {
+    return withDb((d) => {
+      if (this.rows(d).some((r) => matchesFilter(r.doc, filter))) return false;
+      d.run(`INSERT INTO "${this.table}" (data) VALUES (?)`, [JSON.stringify(doc)]);
+      return true;
+    }, true);
+  }
+
   /** No-op: uniqueness is enforced at the application layer (dup checks before insert). */
   async createIndex(): Promise<void> {}
 }
@@ -506,10 +606,9 @@ export function collection<T>(name: string): StoreCollection<T> {
   return new SqliteCollection<T>(name);
 }
 
-/** For tests: close and reset the connection. */
+/** For tests: drop the cached parse and reset the queue. */
 export function _closeForTests(): void {
-  if (db) { flush(); db.close(); db = null; }
-  ready = null;
+  cache?.db.close();
+  cache = null;
   queue = Promise.resolve();
-  knownTables.clear();
 }
