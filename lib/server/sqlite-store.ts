@@ -278,13 +278,27 @@ export interface StoreCollection<T> {
 /**
  * Absolute path to the database file.
  *
- * Defaults to `<cwd>/data/mun.db`. Set SQLITE_PATH to store it elsewhere —
- * on a host, point this at a folder that survives redeploys (a persistent
- * disk), or every deploy starts with an empty database.
+ * Order of preference:
+ *  1. SQLITE_PATH env var, if set (wins — point it anywhere you like).
+ *  2. On Hostinger's git deploy, the app runs from `.../<site>/nodejs`, which is
+ *     REPLACED on every redeploy — so anything under it (a default ./data) is
+ *     wiped each deploy. When we detect that layout we store the db in a sibling
+ *     `persistent-data/` folder (`.../<site>/persistent-data/mun.db`), which sits
+ *     next to `nodejs/` and survives redeploys. This is confirmed writable on
+ *     the host and is what keeps accounts from disappearing.
+ *  3. Otherwise (local dev), `<cwd>/data/mun.db`.
  */
 function dbFilePath(): string {
-  const p = process.env.SQLITE_PATH || path.join(process.cwd(), "data", "mun.db");
-  return path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
+  if (process.env.SQLITE_PATH) {
+    const p = process.env.SQLITE_PATH;
+    return path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
+  }
+  const cwd = process.cwd();
+  // Hostinger runs the app from a folder literally named "nodejs".
+  if (path.basename(cwd) === "nodejs") {
+    return path.resolve(cwd, "..", "persistent-data", "mun.db");
+  }
+  return path.join(cwd, "data", "mun.db");
 }
 
 /** Locate sql.js's wasm binary wherever the package is actually installed. */
