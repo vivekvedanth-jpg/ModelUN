@@ -1,5 +1,8 @@
 export const CONTACT_RECIPIENT = "info@letsmun.com";
 
+/** Public-facing contact addresses shown on the site (footer, Contact page). */
+export const CONTACT_EMAILS = ["info@letsmun.com", "contact@letsmun.com"] as const;
+
 export interface ContactMessage {
   id: string;
   name: string;

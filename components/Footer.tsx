@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { GlobeIcon } from "./icons";
+import { GlobeIcon, MailIcon } from "./icons";
+import { CONTACT_EMAILS } from "@/lib/contact";
 
 export default function Footer() {
   return (
@@ -18,6 +19,18 @@ export default function Footer() {
             Empowering the next generation of student diplomats through debate,
             research, and global collaboration.
           </p>
+          <ul className="mt-4 space-y-2">
+            {CONTACT_EMAILS.map((email) => (
+              <li key={email}>
+                <a
+                  href={`mailto:${email}`}
+                  className="inline-flex items-center gap-2 text-sm text-navy-200 hover:text-white"
+                >
+                  <MailIcon width={14} height={14} /> {email}
+                </a>
+              </li>
+            ))}
+          </ul>
         </div>
 
         <div>
