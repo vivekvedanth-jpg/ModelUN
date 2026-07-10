@@ -22,6 +22,9 @@ export default function robots(): MetadataRoute.Robots {
         "/timer",
         "/videos",
         "/signup",
+        // The reset link carries a single-use token in the query string —
+        // never let it get crawled, cached, or leaked via a search index.
+        "/reset-password",
       ],
     },
     sitemap: `${SITE_URL}/sitemap.xml`,

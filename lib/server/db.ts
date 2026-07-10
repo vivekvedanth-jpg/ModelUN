@@ -38,6 +38,13 @@ export interface UserDoc {
   acceptedTermsAt?: number;
   /** Admins only: the Owner has granted this admin access to the analytics dashboard. */
   canViewAnalytics?: boolean;
+  /**
+   * Password-reset state — server-only, never sent to the client (not part of
+   * AccountDetail/toDetail). The token itself is never stored, only its SHA-256
+   * hash, so a database leak alone can't be used to reset an account.
+   */
+  resetTokenHash?: string;
+  resetTokenExpiresAt?: number;
 }
 
 export interface GroupDoc {

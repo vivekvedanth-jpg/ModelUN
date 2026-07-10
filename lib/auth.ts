@@ -134,6 +134,30 @@ export async function signIn(email: string, password: string): Promise<User> {
   return toUser(account);
 }
 
+/**
+ * Request a password-reset email. Always resolves — the server responds with
+ * the same generic message whether or not the account exists, so this never
+ * confirms which is true.
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  await api("/api/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+/** Complete a password reset using the token from the emailed link. */
+export async function resetPassword(
+  email: string,
+  token: string,
+  newPassword: string
+): Promise<void> {
+  await api("/api/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ email, token, newPassword }),
+  });
+}
+
 /** End the session (clears the cookie). */
 export async function signOut(): Promise<void> {
   try {
