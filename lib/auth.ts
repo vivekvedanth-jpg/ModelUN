@@ -18,6 +18,10 @@ export interface User {
   groupId?: string;
   /** Guest accounts only: epoch ms after which the account is auto-deleted. */
   expiresAt?: number;
+  /** Epoch ms when the user accepted the data-usage terms (unset = not yet). */
+  acceptedTermsAt?: number;
+  /** Admin has been granted access to the analytics dashboard by the Owner. */
+  canViewAnalytics?: boolean;
 }
 
 /** Optional personal details a delegate can fill in from Settings. */
@@ -36,6 +40,8 @@ export interface AccountDetail {
   createdAt: number;
   groupId?: string;
   expiresAt?: number;
+  acceptedTermsAt?: number;
+  canViewAnalytics?: boolean;
 }
 
 /** Default lifetime of a guest (temporary) account, in days. */
@@ -108,7 +114,15 @@ function toUser(account: AccountDetail): User {
     role: account.role,
     groupId: account.groupId,
     expiresAt: account.expiresAt,
+    acceptedTermsAt: account.acceptedTermsAt,
+    canViewAnalytics: account.canViewAnalytics,
   };
+}
+
+/** True if this user may see the analytics dashboard (Owner, or a granted admin). */
+export function canViewAnalytics(user: User | null | undefined): boolean {
+  if (!user) return false;
+  return isOwner(user) || (isAdmin(user.role) && !!user.canViewAnalytics);
 }
 
 /** Authenticate; the server sets an httpOnly session cookie on success. */
@@ -192,6 +206,17 @@ export async function setGroup(
   });
 }
 
+/** Owner grants/revokes an admin's access to the analytics dashboard. */
+export async function setAnalyticsAccess(
+  email: string,
+  canViewAnalytics: boolean
+): Promise<void> {
+  await api("/api/accounts", {
+    method: "PATCH",
+    body: JSON.stringify({ email, canViewAnalytics }),
+  });
+}
+
 export async function deleteAccount(email: string): Promise<void> {
   await api(`/api/accounts?email=${encodeURIComponent(email)}`, {
     method: "DELETE",
@@ -225,5 +250,13 @@ export async function changeEmail(
   return api<{ email: string; oldEmail: string }>("/api/account", {
     method: "PATCH",
     body: JSON.stringify({ action: "email", newEmail, currentPassword }),
+  });
+}
+
+/** Record that the signed-in user has accepted the data-usage terms. */
+export async function acceptTerms(): Promise<void> {
+  await api("/api/account", {
+    method: "PATCH",
+    body: JSON.stringify({ action: "acceptTerms" }),
   });
 }

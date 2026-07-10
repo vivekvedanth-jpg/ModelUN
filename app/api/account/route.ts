@@ -14,7 +14,7 @@ export async function PATCH(req: NextRequest) {
   if (!me) return fail("You must be signed in.", 401);
 
   let body: {
-    action?: "profile" | "password" | "email";
+    action?: "profile" | "password" | "email" | "acceptTerms";
     profile?: UserProfile;
     currentPassword?: string;
     newPassword?: string;
@@ -27,6 +27,17 @@ export async function PATCH(req: NextRequest) {
   }
 
   const users = await usersCol();
+
+  if (body.action === "acceptTerms") {
+    // Record consent once; don't overwrite an earlier acceptance timestamp.
+    if (!me.acceptedTermsAt) {
+      await users.updateOne(
+        { email: me.email },
+        { $set: { acceptedTermsAt: Date.now() } }
+      );
+    }
+    return NextResponse.json({ ok: true });
+  }
 
   if (body.action === "profile") {
     const p = body.profile ?? {};

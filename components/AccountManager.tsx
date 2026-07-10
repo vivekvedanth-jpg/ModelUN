@@ -8,6 +8,7 @@ import {
   setRole,
   setGroup,
   setExpiry,
+  setAnalyticsAccess,
   deleteAccount,
   isOwner,
   canViewAllGroups,
@@ -33,6 +34,7 @@ import {
   AwardIcon,
   CalendarIcon,
   ClockIcon,
+  SparkleIcon,
 } from "./icons";
 
 /** The expiry durations offered when creating or extending a guest account. */
@@ -590,6 +592,32 @@ export default function AccountManager() {
                               ))}
                             </select>
                           )}
+                        {/* Analytics access — Owner only, for admins */}
+                        {owner && u.role === "admin" && (
+                          <button
+                            onClick={() =>
+                              run(
+                                () =>
+                                  setAnalyticsAccess(
+                                    u.email,
+                                    !u.canViewAnalytics
+                                  ),
+                                u.canViewAnalytics
+                                  ? `Analytics access removed for ${u.email}.`
+                                  : `Analytics access granted to ${u.email}.`
+                              )
+                            }
+                            title="Toggle access to the Platform Analytics dashboard"
+                            className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${
+                              u.canViewAnalytics
+                                ? "border-gold-300 bg-gold-100 text-gold-700"
+                                : "border-navy-200 text-navy-600 hover:bg-navy-50"
+                            }`}
+                          >
+                            <SparkleIcon width={13} height={13} />
+                            Analytics {u.canViewAnalytics ? "on" : "off"}
+                          </button>
+                        )}
                         {canDelete && (
                           <button
                             onClick={() => {

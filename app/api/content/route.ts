@@ -25,13 +25,20 @@ const DEFAULT_RESOURCES: ResourceDoc[] = [
 ];
 
 const DEFAULT_VIDEOS: VideoDoc[] = [
-  { id: "v1", title: "Welcome to Model UN", category: "Getting Started", level: "Beginner", duration: "8:24", seeded: true },
-  { id: "v2", title: "Rules of Procedure 101", category: "Procedure", level: "Beginner", duration: "12:05", seeded: true },
-  { id: "v3", title: "Writing a Winning Position Paper", category: "Research", level: "Intermediate", duration: "15:38", seeded: true },
-  { id: "v4", title: "Mastering the Moderated Caucus", category: "Debate", level: "Intermediate", duration: "10:52", seeded: true },
-  { id: "v5", title: "Drafting Resolutions That Pass", category: "Writing", level: "Advanced", duration: "18:20", seeded: true },
-  { id: "v6", title: "Surviving Your First Crisis Committee", category: "Crisis", level: "Advanced", duration: "14:47", seeded: true },
+  { id: "v1", title: "Welcome to Model UN", category: "Getting Started", level: "Beginner", duration: "8:24", seeded: true, order: 0 },
+  { id: "v2", title: "Rules of Procedure 101", category: "Procedure", level: "Beginner", duration: "12:05", seeded: true, order: 1 },
+  { id: "v3", title: "Writing a Winning Position Paper", category: "Research", level: "Intermediate", duration: "15:38", seeded: true, order: 2 },
+  { id: "v4", title: "Mastering the Moderated Caucus", category: "Debate", level: "Intermediate", duration: "10:52", seeded: true, order: 3 },
+  { id: "v5", title: "Drafting Resolutions That Pass", category: "Writing", level: "Advanced", duration: "18:20", seeded: true, order: 4 },
+  { id: "v6", title: "Surviving Your First Crisis Committee", category: "Crisis", level: "Advanced", duration: "14:47", seeded: true, order: 5 },
 ];
+
+/** Study-plan order: by `order` ascending; videos without one fall to the end. */
+function byOrder(a: VideoDoc, b: VideoDoc): number {
+  const ao = typeof a.order === "number" ? a.order : Number.MAX_SAFE_INTEGER;
+  const bo = typeof b.order === "number" ? b.order : Number.MAX_SAFE_INTEGER;
+  return ao - bo;
+}
 
 /** Trimmed string for string input; undefined for blank or non-string values. */
 function str(v: unknown): string | undefined {
@@ -49,7 +56,7 @@ function toResource(d: ResourceDoc): ResourceDoc {
 }
 
 function toVideo(d: VideoDoc): VideoDoc {
-  return { id: d.id, title: d.title, category: d.category, level: d.level, duration: d.duration, url: d.url, seeded: d.seeded };
+  return { id: d.id, title: d.title, category: d.category, level: d.level, duration: d.duration, url: d.url, seeded: d.seeded, order: d.order };
 }
 
 /** GET ?kind=resource|video — any signed-in user. */
@@ -69,7 +76,7 @@ export async function GET(req: NextRequest) {
       }
       docs = await col.find({}).toArray();
     }
-    return NextResponse.json({ videos: docs.map(toVideo) });
+    return NextResponse.json({ videos: docs.sort(byOrder).map(toVideo) });
   }
 
   const col = await resourcesCol();
@@ -109,6 +116,13 @@ export async function POST(req: NextRequest) {
 
   if (kind === "video") {
     const level = body.level;
+    const col = await videosCol();
+    // New videos land at the end of the study plan.
+    const existing = await col.find({}).toArray();
+    const maxOrder = existing.reduce(
+      (m, v) => (typeof v.order === "number" && v.order > m ? v.order : m),
+      -1
+    );
     const doc: VideoDoc = {
       id: makeId(),
       title,
@@ -116,8 +130,9 @@ export async function POST(req: NextRequest) {
       level: level === "Intermediate" || level === "Advanced" ? level : "Beginner",
       duration: str(body.duration) ?? "—",
       url,
+      order: maxOrder + 1,
     };
-    await (await videosCol()).insertOne(doc);
+    await col.insertOne(doc);
     return NextResponse.json({ video: doc }, { status: 201 });
   }
 
@@ -131,6 +146,31 @@ export async function POST(req: NextRequest) {
   };
   await (await resourcesCol()).insertOne(doc);
   return NextResponse.json({ resource: doc }, { status: 201 });
+}
+
+/** PATCH — admin reorders the video study plan. Body: { order: string[] }. */
+export async function PATCH(req: NextRequest) {
+  const me = await getSessionUser(req);
+  if (!me || !isAdminDoc(me)) return fail("Admins only.", 403);
+
+  let body: Record<string, unknown>;
+  try { body = await req.json(); } catch { return fail("Invalid body."); }
+
+  const ids = body.order;
+  if (!Array.isArray(ids) || ids.some((v) => typeof v !== "string")) {
+    return fail("Expected an array of video ids in \"order\".");
+  }
+
+  const col = await videosCol();
+  // Assign each listed video its index as the new order.
+  await Promise.all(
+    (ids as string[]).map((id, i) =>
+      col.updateOne({ id }, { $set: { order: i } })
+    )
+  );
+
+  const docs = await col.find({}).toArray();
+  return NextResponse.json({ videos: docs.sort(byOrder).map(toVideo) });
 }
 
 /** DELETE ?id=xxx&kind=resource|video — admin removes content. */

@@ -7,6 +7,8 @@ export interface Video {
   id: string; title: string; category: string;
   level: "Beginner" | "Intermediate" | "Advanced";
   duration: string; url?: string; seeded?: boolean;
+  /** Position in the study plan (ascending). */
+  order?: number;
 }
 
 async function api(path: string, init?: RequestInit): Promise<Response> {
@@ -56,4 +58,14 @@ export async function addVideo(input: {
 
 export async function deleteVideo(id: string): Promise<void> {
   await api(`/api/content?id=${encodeURIComponent(id)}&kind=video`, { method: "DELETE" });
+}
+
+/** Save a new study-plan order (admin only). Returns the reordered videos. */
+export async function reorderVideos(ids: string[]): Promise<Video[]> {
+  const res = await api("/api/content", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ order: ids }),
+  });
+  return ((await res.json()) as { videos: Video[] }).videos;
 }

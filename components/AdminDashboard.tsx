@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useAuth } from "./AuthProvider";
-import { getAccounts, isOwner, type AccountDetail } from "@/lib/auth";
+import { getAccounts, isOwner, canViewAnalytics, type AccountDetail } from "@/lib/auth";
 import { getResources, getVideos } from "@/lib/content";
 import PageHeader from "./PageHeader";
 import UploadCard from "./UploadCard";
@@ -17,11 +17,13 @@ import {
   AwardIcon,
   DocumentIcon,
   ArrowRightIcon,
+  SparkleIcon,
 } from "./icons";
 
 export default function AdminDashboard() {
   const { user } = useAuth();
   const owner = isOwner(user);
+  const showAnalytics = canViewAnalytics(user);
 
   const [users, setUsers] = useState<AccountDetail[]>([]);
   const [videoCount, setVideoCount] = useState(0);
@@ -124,6 +126,22 @@ export default function AdminDashboard() {
               : "Accounts, experience, and rankings live on their own pages."}
           </p>
           <div className="mt-6 grid gap-6 sm:grid-cols-2">
+            {showAnalytics && (
+              <Link href="/admin/analytics" className="card-hover group ring-2 ring-gold-300">
+                <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-gold-500 text-navy-900">
+                  <SparkleIcon width={24} height={24} />
+                </span>
+                <h3 className="mt-5 flex items-center gap-1.5 text-lg font-bold text-navy-900">
+                  Platform Analytics
+                  <ArrowRightIcon width={16} height={16} className="opacity-0 transition-opacity group-hover:opacity-100" />
+                </h3>
+                <p className="mt-2 text-sm leading-relaxed text-navy-600">
+                  A live snapshot of students, schools, conferences and awards —
+                  the numbers to show institutions considering Let&apos;s MUN.
+                </p>
+              </Link>
+            )}
+
             <Link href="/admin/affairs" className="card-hover group">
               <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-navy-50 text-navy-800">
                 <UsersIcon width={24} height={24} />

@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { addResource, addVideo } from "@/lib/content";
+import { toEmbed } from "@/lib/embed";
 import { UploadIcon, CheckIcon } from "./icons";
 
 interface UploadCardProps {
@@ -34,7 +35,10 @@ export default function UploadCard({
 
     try {
       if (kind === "video") {
-        await addVideo({ title: clean, url: url.trim() || undefined });
+        // Turn a pasted watch link / <iframe> code into a clean embeddable URL
+        // so it plays inline; fall back to the raw text otherwise.
+        const embed = toEmbed(url);
+        await addVideo({ title: clean, url: embed.src || url.trim() || undefined });
       } else {
         await addResource({ title: clean, url: url.trim() || undefined });
       }
@@ -78,15 +82,20 @@ export default function UploadCard({
       </div>
 
       <input
-        type="url"
+        type="text"
         className="input-field mt-3"
-        placeholder="Link (optional) — e.g. https://example.com/document.pdf"
+        placeholder={
+          kind === "video"
+            ? "YouTube / Vimeo link, or paste an <iframe> embed code"
+            : "Link (optional) — e.g. https://example.com/document.pdf"
+        }
         value={url}
         onChange={(e) => setUrl(e.target.value)}
       />
       <p className="mt-2 text-xs text-navy-500">
-        Published entries link out to this URL — paste a link to where the{" "}
-        {kind === "video" ? "video" : "resource"} is hosted.
+        {kind === "video"
+          ? "Paste a YouTube or Vimeo link (or a full embed code) — the video then plays right inside the Videos page. A direct .mp4 link works too."
+          : "Published entries link out to this URL — paste a link to where the resource is hosted."}
       </p>
 
       {error && (

@@ -34,6 +34,10 @@ export interface UserDoc {
   createdAt: number;
   /** Guest accounts only: epoch ms after which the account is auto-deleted. */
   expiresAt?: number;
+  /** Epoch ms when this user accepted the data-usage terms (unset = not yet). */
+  acceptedTermsAt?: number;
+  /** Admins only: the Owner has granted this admin access to the analytics dashboard. */
+  canViewAnalytics?: boolean;
 }
 
 export interface GroupDoc {
@@ -100,6 +104,8 @@ export interface AccountDetail {
   createdAt: number;
   groupId?: string;
   expiresAt?: number;
+  acceptedTermsAt?: number;
+  canViewAnalytics?: boolean;
 }
 
 export function toDetail(u: UserDoc): AccountDetail {
@@ -110,6 +116,8 @@ export function toDetail(u: UserDoc): AccountDetail {
     createdAt: u.createdAt,
     groupId: u.groupId,
     expiresAt: u.expiresAt,
+    acceptedTermsAt: u.acceptedTermsAt,
+    canViewAnalytics: u.canViewAnalytics,
   };
 }
 
@@ -303,6 +311,8 @@ export interface VideoDoc {
   id: string; title: string; category: string;
   level: "Beginner" | "Intermediate" | "Advanced";
   duration: string; url?: string; seeded?: boolean;
+  /** Position in the study plan (ascending). Unset videos sort to the end. */
+  order?: number;
 }
 
 export async function resourcesCol(): Promise<StoreCollection<ResourceDoc>> {

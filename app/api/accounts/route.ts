@@ -147,6 +147,7 @@ export async function PATCH(req: NextRequest) {
     role?: Role;
     groupId?: string | null;
     expiresAt?: number;
+    canViewAnalytics?: boolean;
   };
   try {
     body = await req.json();
@@ -154,10 +155,15 @@ export async function PATCH(req: NextRequest) {
     return fail("Invalid request body.");
   }
 
-  // Role and group changes stay Owner-only; only a guest's expiry may be
-  // adjusted by regular admins.
-  if ((body.role !== undefined || body.groupId !== undefined) && !isOwnerDoc(me)) {
-    return fail("Only the Owner can change roles or groups.", 403);
+  // Role, group, and analytics-access changes stay Owner-only; only a guest's
+  // expiry may be adjusted by regular admins.
+  if (
+    (body.role !== undefined ||
+      body.groupId !== undefined ||
+      body.canViewAnalytics !== undefined) &&
+    !isOwnerDoc(me)
+  ) {
+    return fail("Only the Owner can change roles, groups, or access.", 403);
   }
 
   const email = (body.email ?? "").trim().toLowerCase();
@@ -202,6 +208,14 @@ export async function PATCH(req: NextRequest) {
     const g = body.groupId && body.groupId.trim() ? body.groupId.trim() : null;
     if (g) update.groupId = g;
     else unsetGroup = true;
+  }
+
+  if (body.canViewAnalytics !== undefined) {
+    // Analytics access only makes sense for admins.
+    if ((update.role ?? target.role) !== "admin") {
+      return fail("Analytics access can only be granted to admins.");
+    }
+    update.canViewAnalytics = !!body.canViewAnalytics;
   }
 
   await users.updateOne(
