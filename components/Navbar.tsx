@@ -95,17 +95,18 @@ export default function Navbar() {
         {/* Logo */}
         <Link
           href="/"
-          className="flex items-center gap-2.5"
+          className="flex flex-shrink-0 items-center gap-2.5"
           onClick={() => setOpen(false)}
         >
           <LogoMark size={36} />
-          <span className="font-serif text-lg font-bold text-navy-900">
+          <span className="whitespace-nowrap font-serif text-lg font-bold text-navy-900">
             Let&apos;s <span className="text-gold-600">MUN</span>
           </span>
         </Link>
 
-        {/* Desktop nav links */}
-        <div className="hidden items-center gap-0.5 lg:flex">
+        {/* Desktop nav links — xl (not lg) so the wordmark + full link row + auth
+            controls never have to squeeze into a too-narrow "desktop" width. */}
+        <div className="hidden items-center gap-0.5 xl:flex">
           {links.map((l) => (
             <Link
               key={l.href}
@@ -122,7 +123,7 @@ export default function Navbar() {
         </div>
 
         {/* Desktop auth controls */}
-        <div className="hidden items-center gap-3 lg:flex">
+        <div className="hidden items-center gap-3 xl:flex">
           {user ? (
             <>
               {isAdmin(user.role) && (
@@ -176,7 +177,7 @@ export default function Navbar() {
         {/* Mobile toggle */}
         <button
           onClick={() => setOpen((v) => !v)}
-          className="flex h-10 w-10 items-center justify-center rounded-lg text-navy-800 hover:bg-navy-100 lg:hidden"
+          className="flex h-10 w-10 items-center justify-center rounded-lg text-navy-800 hover:bg-navy-100 xl:hidden"
           aria-label="Toggle navigation menu"
           aria-expanded={open}
         >
@@ -186,7 +187,7 @@ export default function Navbar() {
 
       {/* Mobile panel */}
       {open && (
-        <div className="border-t border-navy-100 bg-cream lg:hidden">
+        <div className="border-t border-navy-100 bg-cream xl:hidden">
           <div className="container-page flex flex-col gap-1 py-4">
             {links.map((l) => (
               <Link
