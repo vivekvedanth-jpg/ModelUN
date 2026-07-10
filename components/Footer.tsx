@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { GlobeIcon, MailIcon } from "./icons";
+import { MailIcon } from "./icons";
 import { CONTACT_EMAILS } from "@/lib/contact";
+import LogoMark from "./LogoMark";
 
 export default function Footer() {
   return (
@@ -8,9 +9,7 @@ export default function Footer() {
       <div className="container-page grid gap-10 py-14 sm:grid-cols-2 lg:grid-cols-4">
         <div className="sm:col-span-2 lg:col-span-1">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-navy-800 text-gold-400">
-              <GlobeIcon />
-            </span>
+            <LogoMark size={36} />
             <span className="font-serif text-lg font-bold text-white">
               Let&apos;s <span className="text-gold-400">MUN</span>
             </span>
@@ -58,8 +57,20 @@ export default function Footer() {
 
         <div>
           <h3 className="font-serif text-sm font-bold uppercase tracking-wider text-gold-400">
-            About MUN
+            About
           </h3>
+          <ul className="mt-4 space-y-2.5 text-sm">
+            <li>
+              <Link href="/goals" className="hover:text-white">
+                Our Goals &amp; Mission
+              </Link>
+            </li>
+            <li>
+              <Link href="/contact" className="hover:text-white">
+                Contact us
+              </Link>
+            </li>
+          </ul>
           <p className="mt-4 text-sm leading-relaxed text-navy-200">
             A simulation of the United Nations where students step into the role
             of delegates to debate the world&apos;s most pressing issues.

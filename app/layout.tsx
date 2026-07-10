@@ -41,6 +41,11 @@ export const metadata: Metadata = {
     "rules of procedure",
   ],
   alternates: { canonical: "/" },
+  icons: {
+    icon: "/logo.png",
+    shortcut: "/logo.png",
+    apple: "/logo.png",
+  },
   robots: {
     index: true,
     follow: true,
@@ -53,11 +58,13 @@ export const metadata: Metadata = {
     title: "Let's MUN — Learn the Art of Diplomacy",
     description: DESCRIPTION,
     locale: "en_US",
+    images: [{ url: "/logo.png", width: 1024, height: 1024, alt: "Let's MUN" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "Let's MUN — Learn the Art of Diplomacy",
     description: DESCRIPTION,
+    images: ["/logo.png"],
   },
 };
 

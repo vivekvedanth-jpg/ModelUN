@@ -5,7 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "./AuthProvider";
 import { isAdmin, displayName } from "@/lib/auth";
-import { GlobeIcon, MenuIcon, CloseIcon, UploadIcon } from "./icons";
+import { MenuIcon, CloseIcon, UploadIcon } from "./icons";
+import LogoMark from "./LogoMark";
 
 /** Links every signed-in (normal) user sees. */
 const NORMAL_LINKS = [
@@ -97,9 +98,7 @@ export default function Navbar() {
           className="flex items-center gap-2.5"
           onClick={() => setOpen(false)}
         >
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-navy-800 text-gold-400">
-            <GlobeIcon />
-          </span>
+          <LogoMark size={36} />
           <span className="font-serif text-lg font-bold text-navy-900">
             Let&apos;s <span className="text-gold-600">MUN</span>
           </span>
