@@ -74,7 +74,13 @@ export function slugify(title: string): string {
 
 /** Plain text from HTML (for excerpts + word counts). */
 export function htmlToText(html: string): string {
-  return sanitizeHtml(html, { allowedTags: [], allowedAttributes: {} })
+  // Give block boundaries a space so "…Welcome</h2><p>A real…" doesn't collapse
+  // into "WelcomeA real" once the tags are stripped.
+  const spaced = html.replace(
+    /(<\/(h[1-6]|p|div|li|blockquote|figcaption|ul|ol|tr)>|<br\s*\/?>)/gi,
+    "$1 "
+  );
+  return sanitizeHtml(spaced, { allowedTags: [], allowedAttributes: {} })
     .replace(/\s+/g, " ")
     .trim();
 }
