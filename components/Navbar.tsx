@@ -13,6 +13,7 @@ const NORMAL_LINKS = [
   { href: "/", label: "Home" },
   { href: "/videos", label: "Videos" },
   { href: "/resources", label: "Resources" },
+  { href: "/blog", label: "Blog" },
   { href: "/timer", label: "Timer" },
   { href: "/committee-view", label: "Committee" },
   { href: "/model-diplomat", label: "MUN Assistant" },
@@ -28,6 +29,7 @@ const ADMIN_LINKS = [
   { href: "/", label: "Home" },
   { href: "/videos", label: "Videos" },
   { href: "/resources", label: "Resources" },
+  { href: "/blog", label: "Blog" },
   { href: "/timer", label: "Timer" },
   { href: "/committee", label: "Committee" },
   { href: "/model-diplomat", label: "MUN Assistant" },
@@ -71,7 +73,10 @@ export default function Navbar() {
 
   // Decide which links to show based on auth state + role.
   const links = !user
-    ? [{ href: "/", label: "Home" }]
+    ? [
+        { href: "/", label: "Home" },
+        { href: "/blog", label: "Blog" },
+      ]
     : user.role === "guest"
     ? GUEST_LINKS
     : user.role === "chair"

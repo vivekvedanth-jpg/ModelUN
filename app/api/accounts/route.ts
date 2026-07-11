@@ -148,6 +148,7 @@ export async function PATCH(req: NextRequest) {
     groupId?: string | null;
     expiresAt?: number;
     canViewAnalytics?: boolean;
+    canWriteBlog?: boolean;
   };
   try {
     body = await req.json();
@@ -156,7 +157,8 @@ export async function PATCH(req: NextRequest) {
   }
 
   // Role, group, and analytics-access changes stay Owner-only; only a guest's
-  // expiry may be adjusted by regular admins.
+  // expiry may be adjusted by regular admins. Blog-writing access can be granted
+  // by any admin (all admins manage who writes for the blog).
   if (
     (body.role !== undefined ||
       body.groupId !== undefined ||
@@ -216,6 +218,11 @@ export async function PATCH(req: NextRequest) {
       return fail("Analytics access can only be granted to admins.");
     }
     update.canViewAnalytics = !!body.canViewAnalytics;
+  }
+
+  if (body.canWriteBlog !== undefined) {
+    // Admins can always write; the flag is only meaningful for other roles.
+    update.canWriteBlog = !!body.canWriteBlog;
   }
 
   await users.updateOne(

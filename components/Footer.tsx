@@ -39,6 +39,7 @@ export default function Footer() {
           <ul className="mt-4 space-y-2.5 text-sm">
             <li><Link href="/videos" className="hover:text-white">Videos</Link></li>
             <li><Link href="/resources" className="hover:text-white">Resources</Link></li>
+            <li><Link href="/blog" className="hover:text-white">Blog</Link></li>
             <li><Link href="/timer" className="hover:text-white">Caucus Timer</Link></li>
             <li><Link href="/model-diplomat" className="hover:text-white">MUN Assistant</Link></li>
           </ul>

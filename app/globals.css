@@ -155,6 +155,37 @@
   @apply pointer-events-none text-silver-500;
 }
 
+/* Premium reading typography for a published blog article (layers on top of
+   the shared .doc-content base styles). */
+.blog-article h1 {
+  @apply mb-4 mt-10 text-3xl;
+}
+.blog-article h2 {
+  @apply mb-3 mt-9 text-2xl;
+}
+.blog-article h3 {
+  @apply mb-2 mt-7 text-xl;
+}
+.blog-article p {
+  @apply my-5;
+}
+.blog-article ul,
+.blog-article ol {
+  @apply my-5 space-y-1.5;
+}
+.blog-article a {
+  @apply font-medium text-navy-700 underline decoration-gold-400 decoration-2 underline-offset-2 hover:text-navy-900;
+}
+.blog-article blockquote {
+  @apply my-7 border-l-4 border-gold-400 pl-5 font-serif text-xl italic text-navy-700;
+}
+.blog-article img {
+  @apply my-7 rounded-xl;
+}
+.blog-article hr {
+  @apply my-9;
+}
+
 /* Hide the number-input spin buttons for a clean committee scoring grid. */
 .no-spin::-webkit-outer-spin-button,
 .no-spin::-webkit-inner-spin-button {

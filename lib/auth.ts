@@ -22,6 +22,8 @@ export interface User {
   acceptedTermsAt?: number;
   /** Admin has been granted access to the analytics dashboard by the Owner. */
   canViewAnalytics?: boolean;
+  /** Has been granted permission to write blog posts. */
+  canWriteBlog?: boolean;
 }
 
 /** Optional personal details a delegate can fill in from Settings. */
@@ -42,6 +44,7 @@ export interface AccountDetail {
   expiresAt?: number;
   acceptedTermsAt?: number;
   canViewAnalytics?: boolean;
+  canWriteBlog?: boolean;
 }
 
 /** Default lifetime of a guest (temporary) account, in days. */
@@ -116,6 +119,7 @@ function toUser(account: AccountDetail): User {
     expiresAt: account.expiresAt,
     acceptedTermsAt: account.acceptedTermsAt,
     canViewAnalytics: account.canViewAnalytics,
+    canWriteBlog: account.canWriteBlog,
   };
 }
 
@@ -123,6 +127,12 @@ function toUser(account: AccountDetail): User {
 export function canViewAnalytics(user: User | null | undefined): boolean {
   if (!user) return false;
   return isOwner(user) || (isAdmin(user.role) && !!user.canViewAnalytics);
+}
+
+/** True if this user may write blog posts (any admin/owner, or a granted account). */
+export function canWriteBlog(user: User | null | undefined): boolean {
+  if (!user) return false;
+  return isAdmin(user.role) || !!user.canWriteBlog;
 }
 
 /** Authenticate; the server sets an httpOnly session cookie on success. */
@@ -238,6 +248,17 @@ export async function setAnalyticsAccess(
   await api("/api/accounts", {
     method: "PATCH",
     body: JSON.stringify({ email, canViewAnalytics }),
+  });
+}
+
+/** Owner/admin grants/revokes an account's permission to write blog posts. */
+export async function setBlogAccess(
+  email: string,
+  canWriteBlog: boolean
+): Promise<void> {
+  await api("/api/accounts", {
+    method: "PATCH",
+    body: JSON.stringify({ email, canWriteBlog }),
   });
 }
 

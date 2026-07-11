@@ -38,6 +38,8 @@ export interface UserDoc {
   acceptedTermsAt?: number;
   /** Admins only: the Owner has granted this admin access to the analytics dashboard. */
   canViewAnalytics?: boolean;
+  /** The Owner/an admin has granted this account permission to write blog posts. */
+  canWriteBlog?: boolean;
   /**
    * Password-reset state — server-only, never sent to the client (not part of
    * AccountDetail/toDetail). The token itself is never stored, only its SHA-256
@@ -113,6 +115,7 @@ export interface AccountDetail {
   expiresAt?: number;
   acceptedTermsAt?: number;
   canViewAnalytics?: boolean;
+  canWriteBlog?: boolean;
 }
 
 export function toDetail(u: UserDoc): AccountDetail {
@@ -125,6 +128,7 @@ export function toDetail(u: UserDoc): AccountDetail {
     expiresAt: u.expiresAt,
     acceptedTermsAt: u.acceptedTermsAt,
     canViewAnalytics: u.canViewAnalytics,
+    canWriteBlog: u.canWriteBlog,
   };
 }
 
@@ -342,6 +346,38 @@ export interface ResolutionDocDb {
 export async function documentsCol(): Promise<StoreCollection<ResolutionDocDb>> {
   await ready();
   return collection<ResolutionDocDb>("documents");
+}
+
+/* ────────────────────────────── Blog collection ─────────────────────────── */
+
+export interface BlogPostDoc {
+  id: string;
+  /** URL-safe unique slug (derived from the title). */
+  slug: string;
+  title: string;
+  /** Short summary used on cards and as the page meta description. */
+  excerpt: string;
+  /** Optional cover image as a base64 data URL. */
+  coverImage?: string;
+  /** Article body as sanitised HTML (same shape as the document editor). */
+  html: string;
+  /** Optional single category/tag label. */
+  tag?: string;
+  authorEmail: string;
+  authorName: string;
+  /** Estimated reading time in minutes. */
+  readingMinutes: number;
+  /** Drafts (false) are visible only to their author + admins. */
+  published: boolean;
+  createdAt: number;
+  updatedAt: number;
+  /** First time it was published (unset while still a draft). */
+  publishedAt?: number;
+}
+
+export async function blogPostsCol(): Promise<StoreCollection<BlogPostDoc>> {
+  await ready();
+  return collection<BlogPostDoc>("blog_posts");
 }
 
 /* ──────────────────────────── Settings collection ───────────────────────── */

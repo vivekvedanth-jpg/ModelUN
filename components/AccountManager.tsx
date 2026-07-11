@@ -9,8 +9,10 @@ import {
   setGroup,
   setExpiry,
   setAnalyticsAccess,
+  setBlogAccess,
   deleteAccount,
   isOwner,
+  isAdmin,
   canViewAllGroups,
   getActorGroupId,
   ALL_GROUPS,
@@ -35,6 +37,7 @@ import {
   CalendarIcon,
   ClockIcon,
   SparkleIcon,
+  BookIcon,
 } from "./icons";
 
 /** The expiry durations offered when creating or extending a guest account. */
@@ -113,6 +116,7 @@ function daysLeft(expiresAt: number): number {
 export default function AccountManager() {
   const { user } = useAuth();
   const owner = isOwner(user);
+  const admin = isAdmin(user?.role);
 
   const [users, setUsers] = useState<AccountDetail[]>([]);
   const [experiences, setExperiences] = useState<MunExperience[]>([]);
@@ -616,6 +620,28 @@ export default function AccountManager() {
                           >
                             <SparkleIcon width={13} height={13} />
                             Analytics {u.canViewAnalytics ? "on" : "off"}
+                          </button>
+                        )}
+                        {/* Blog-writing access — any admin, for delegates & chairs */}
+                        {admin && (u.role === "normal" || u.role === "chair") && (
+                          <button
+                            onClick={() =>
+                              run(
+                                () => setBlogAccess(u.email, !u.canWriteBlog),
+                                u.canWriteBlog
+                                  ? `Blog access removed for ${u.email}.`
+                                  : `Blog access granted to ${u.email}.`
+                              )
+                            }
+                            title="Allow this delegate to write and publish blog posts"
+                            className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${
+                              u.canWriteBlog
+                                ? "border-gold-300 bg-gold-100 text-gold-700"
+                                : "border-navy-200 text-navy-600 hover:bg-navy-50"
+                            }`}
+                          >
+                            <BookIcon width={13} height={13} />
+                            Blog {u.canWriteBlog ? "on" : "off"}
                           </button>
                         )}
                         {canDelete && (

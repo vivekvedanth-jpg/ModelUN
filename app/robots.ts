@@ -25,6 +25,9 @@ export default function robots(): MetadataRoute.Robots {
         // The reset link carries a single-use token in the query string —
         // never let it get crawled, cached, or leaked via a search index.
         "/reset-password",
+        // Author-only tools (the public blog at /blog stays crawlable).
+        "/blog/write",
+        "/blog/manage",
       ],
     },
     sitemap: `${SITE_URL}/sitemap.xml`,
