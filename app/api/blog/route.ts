@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { blogPostsCol, type BlogPostDoc, type UserDoc } from "@/lib/server/db";
+import { blogPostsCol, blogCommentsCol, type BlogPostDoc, type UserDoc } from "@/lib/server/db";
 import { getSessionUser, isAdminDoc, fail } from "@/lib/server/session";
 import {
   sanitizeBlogHtml,
@@ -44,6 +44,11 @@ async function uniqueSlug(base: string, exceptId?: string): Promise<string> {
 
 function str(v: unknown): string | undefined {
   return typeof v === "string" && v.trim() ? v.trim() : undefined;
+}
+
+/** Normalise a comment-policy value, defaulting to "signed-in". */
+function commentPolicyOf(v: unknown): "off" | "signed-in" | "anyone" {
+  return v === "off" || v === "anyone" ? v : "signed-in";
 }
 
 /** GET — list posts. ?scope=mine returns the caller's manageable posts (incl.
@@ -105,6 +110,7 @@ export async function POST(req: NextRequest) {
     authorName: me!.profile?.fullName?.trim() || me!.email.split("@")[0],
     readingMinutes: readingMinutes(html),
     published,
+    commentPolicy: commentPolicyOf(body.commentPolicy),
     createdAt: now,
     updatedAt: now,
     ...(published ? { publishedAt: now } : {}),
@@ -159,6 +165,9 @@ export async function PATCH(req: NextRequest) {
     // Stamp publishedAt the first time it goes live.
     if (update.published && !post.publishedAt) update.publishedAt = Date.now();
   }
+  if (body.commentPolicy !== undefined) {
+    update.commentPolicy = commentPolicyOf(body.commentPolicy);
+  }
 
   await col.updateOne({ id }, { $set: update });
   return NextResponse.json({ post: { ...post, ...update } });
@@ -178,5 +187,7 @@ export async function DELETE(req: NextRequest) {
   if (!canManage(me, post)) return fail("You can't delete this post.", 403);
 
   await col.deleteOne({ id });
+  // Clean up the post's comments so none are orphaned.
+  await (await blogCommentsCol()).deleteMany({ postId: id });
   return NextResponse.json({ ok: true });
 }

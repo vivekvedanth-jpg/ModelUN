@@ -10,6 +10,7 @@ import {
   createPost,
   updatePost,
   type BlogPost,
+  type CommentPolicy,
 } from "@/lib/blog";
 import { downscaleImage } from "@/lib/editor-images";
 import { CheckIcon, TrashIcon } from "./icons";
@@ -55,6 +56,7 @@ export default function BlogEditor() {
   const [tag, setTag] = useState("");
   const [excerpt, setExcerpt] = useState("");
   const [coverImage, setCoverImage] = useState<string | undefined>();
+  const [commentPolicy, setCommentPolicy] = useState<CommentPolicy>("signed-in");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -76,6 +78,7 @@ export default function BlogEditor() {
           setTag(p.tag ?? "");
           setExcerpt(p.excerpt ?? "");
           setCoverImage(p.coverImage);
+          setCommentPolicy(p.commentPolicy ?? "signed-in");
           if (editorRef.current) editorRef.current.innerHTML = p.html;
         }
       })
@@ -129,7 +132,7 @@ export default function BlogEditor() {
       return;
     }
     setSaving(true);
-    const payload = { title, html, tag: tag || undefined, excerpt: excerpt || undefined, coverImage, published: publish };
+    const payload = { title, html, tag: tag || undefined, excerpt: excerpt || undefined, coverImage, published: publish, commentPolicy };
     try {
       if (existing) {
         const updated = await updatePost(existing.id, payload);
@@ -236,6 +239,20 @@ export default function BlogEditor() {
           <label className="label">Short summary (optional)</label>
           <input value={excerpt} onChange={(e) => setExcerpt(e.target.value)} placeholder="One line shown on cards (auto-generated if left blank)" className="input-field" />
         </div>
+      </div>
+
+      {/* Comment policy */}
+      <div className="mt-4 max-w-sm">
+        <label className="label">Who can comment</label>
+        <select
+          value={commentPolicy}
+          onChange={(e) => setCommentPolicy(e.target.value as CommentPolicy)}
+          className="input-field"
+        >
+          <option value="signed-in">Signed-in users only</option>
+          <option value="anyone">Anyone (including logged-out visitors)</option>
+          <option value="off">No comments</option>
+        </select>
       </div>
 
       {/* Toolbar */}

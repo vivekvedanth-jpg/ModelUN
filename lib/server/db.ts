@@ -316,6 +316,9 @@ export async function messagesCol(): Promise<StoreCollection<MessageDoc>> {
 export interface ResourceDoc {
   id: string; title: string; type: string; format: string;
   desc: string; url?: string; seeded?: boolean;
+  /** Admin-defined grouping, e.g. category "Research" → subcategory "Position Papers". */
+  category?: string;
+  subcategory?: string;
 }
 
 export interface VideoDoc {
@@ -373,11 +376,36 @@ export interface BlogPostDoc {
   updatedAt: number;
   /** First time it was published (unset while still a draft). */
   publishedAt?: number;
+  /**
+   * Who may comment on this post (author/admin choice):
+   *  - "off"       — comments disabled
+   *  - "signed-in" — only logged-in accounts (default)
+   *  - "anyone"    — anyone, including logged-out visitors
+   */
+  commentPolicy?: "off" | "signed-in" | "anyone";
 }
+
+export type CommentPolicy = NonNullable<BlogPostDoc["commentPolicy"]>;
 
 export async function blogPostsCol(): Promise<StoreCollection<BlogPostDoc>> {
   await ready();
   return collection<BlogPostDoc>("blog_posts");
+}
+
+export interface BlogCommentDoc {
+  id: string;
+  postId: string;
+  authorName: string;
+  /** Lowercased account email when the commenter was signed in. */
+  authorEmail?: string;
+  /** Plain text (never HTML) — rendered as text so it can't inject markup. */
+  body: string;
+  createdAt: number;
+}
+
+export async function blogCommentsCol(): Promise<StoreCollection<BlogCommentDoc>> {
+  await ready();
+  return collection<BlogCommentDoc>("blog_comments");
 }
 
 /* ──────────────────────────── Settings collection ───────────────────────── */

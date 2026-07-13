@@ -1,6 +1,8 @@
 export interface Resource {
   id: string; title: string; type: string; format: string;
   desc: string; url?: string; seeded?: boolean;
+  category?: string;
+  subcategory?: string;
 }
 
 export interface Video {
@@ -27,11 +29,25 @@ export async function getResources(): Promise<Resource[]> {
 
 export async function addResource(input: {
   title: string; type?: string; format?: string; desc?: string; url?: string;
+  category?: string; subcategory?: string;
 }): Promise<Resource> {
   const res = await api("/api/content", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ kind: "resource", ...input }),
+  });
+  return ((await res.json()) as { resource: Resource }).resource;
+}
+
+/** Admin edits a resource's category/subcategory (and optionally title/desc). */
+export async function updateResource(
+  id: string,
+  input: { category?: string; subcategory?: string; title?: string; desc?: string; type?: string }
+): Promise<Resource> {
+  const res = await api("/api/content", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ resourceId: id, ...input }),
   });
   return ((await res.json()) as { resource: Resource }).resource;
 }

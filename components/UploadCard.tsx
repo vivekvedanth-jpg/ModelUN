@@ -13,6 +13,9 @@ interface UploadCardProps {
   accept?: string;
   cta: string;
   onAdded?: () => void;
+  /** Existing category / subcategory names, for datalist suggestions (resources). */
+  categories?: string[];
+  subcategories?: string[];
 }
 
 export default function UploadCard({
@@ -21,9 +24,13 @@ export default function UploadCard({
   description,
   cta,
   onAdded,
+  categories = [],
+  subcategories = [],
 }: UploadCardProps) {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
+  const [category, setCategory] = useState("");
+  const [subcategory, setSubcategory] = useState("");
   const [done, setDone] = useState(false);
   const [error, setError] = useState("");
 
@@ -40,11 +47,18 @@ export default function UploadCard({
         const embed = toEmbed(url);
         await addVideo({ title: clean, url: embed.src || url.trim() || undefined });
       } else {
-        await addResource({ title: clean, url: url.trim() || undefined });
+        await addResource({
+          title: clean,
+          url: url.trim() || undefined,
+          category: category.trim() || undefined,
+          subcategory: subcategory.trim() || undefined,
+        });
       }
       setDone(true);
       setName("");
       setUrl("");
+      setCategory("");
+      setSubcategory("");
       onAdded?.();
       window.setTimeout(() => setDone(false), 4000);
     } catch (err) {
@@ -97,6 +111,37 @@ export default function UploadCard({
           ? "Paste a YouTube or Vimeo link (or a full embed code) — the video then plays right inside the Videos page. A direct .mp4 link works too."
           : "Published entries link out to this URL — paste a link to where the resource is hosted."}
       </p>
+
+      {kind === "resource" && (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div>
+            <input
+              type="text"
+              list="resource-categories"
+              className="input-field"
+              placeholder="Category (e.g. Research)"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            />
+            <datalist id="resource-categories">
+              {categories.map((c) => <option key={c} value={c} />)}
+            </datalist>
+          </div>
+          <div>
+            <input
+              type="text"
+              list="resource-subcategories"
+              className="input-field"
+              placeholder="Subcategory (e.g. Position Papers)"
+              value={subcategory}
+              onChange={(e) => setSubcategory(e.target.value)}
+            />
+            <datalist id="resource-subcategories">
+              {subcategories.map((c) => <option key={c} value={c} />)}
+            </datalist>
+          </div>
+        </div>
+      )}
 
       {error && (
         <p className="mt-3 flex items-center gap-2 rounded-lg bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">

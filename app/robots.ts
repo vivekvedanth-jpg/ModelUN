@@ -28,6 +28,8 @@ export default function robots(): MetadataRoute.Robots {
         // Author-only tools (the public blog at /blog stays crawlable).
         "/blog/write",
         "/blog/manage",
+        // Search result pages are thin/duplicate — keep them out of the index.
+        "/search",
       ],
     },
     sitemap: `${SITE_URL}/sitemap.xml`,

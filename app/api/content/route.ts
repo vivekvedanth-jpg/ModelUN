@@ -52,7 +52,7 @@ function isKind(v: unknown): v is "video" | "resource" {
 
 /** Projects a stored resource to the exact client shape in lib/content.ts. */
 function toResource(d: ResourceDoc): ResourceDoc {
-  return { id: d.id, title: d.title, type: d.type, format: d.format, desc: d.desc, url: d.url, seeded: d.seeded };
+  return { id: d.id, title: d.title, type: d.type, format: d.format, desc: d.desc, url: d.url, seeded: d.seeded, category: d.category, subcategory: d.subcategory };
 }
 
 function toVideo(d: VideoDoc): VideoDoc {
@@ -143,18 +143,58 @@ export async function POST(req: NextRequest) {
     format: str(body.format) ?? (url ? "Link" : "File"),
     desc: desc ?? "Uploaded by an administrator.",
     url,
+    category: str(body.category),
+    subcategory: str(body.subcategory),
   };
   await (await resourcesCol()).insertOne(doc);
   return NextResponse.json({ resource: doc }, { status: 201 });
 }
 
-/** PATCH — admin reorders the video study plan. Body: { order: string[] }. */
+/**
+ * PATCH — admin edits. Two shapes:
+ *   { resourceId, category?, subcategory?, title?, desc?, type? } → edit a resource
+ *   { order: string[] }                                          → reorder videos
+ */
 export async function PATCH(req: NextRequest) {
   const me = await getSessionUser(req);
   if (!me || !isAdminDoc(me)) return fail("Admins only.", 403);
 
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return fail("Invalid body."); }
+
+  // Resource edit (categorisation lives here).
+  if (typeof body.resourceId === "string") {
+    const rcol = await resourcesCol();
+    const existing = (await rcol.find({ id: body.resourceId }).toArray())[0];
+    if (!existing) return fail("That resource no longer exists.", 404);
+
+    const set: Partial<ResourceDoc> = {};
+    const unset: Record<string, ""> = {};
+    if (body.category !== undefined) {
+      const c = str(body.category);
+      if (c) set.category = c; else unset.category = "";
+    }
+    if (body.subcategory !== undefined) {
+      const s = str(body.subcategory);
+      if (s) set.subcategory = s; else unset.subcategory = "";
+    }
+    if (body.title !== undefined) {
+      const t = str(body.title);
+      if (!t) return fail("Title can't be empty.");
+      set.title = t.slice(0, TITLE_MAX);
+    }
+    if (body.desc !== undefined) set.desc = str(body.desc)?.slice(0, DESC_MAX) ?? "";
+    if (body.type !== undefined) set.type = str(body.type) ?? existing.type;
+
+    await rcol.updateOne(
+      { id: body.resourceId },
+      {
+        ...(Object.keys(set).length ? { $set: set } : {}),
+        ...(Object.keys(unset).length ? { $unset: unset } : {}),
+      }
+    );
+    return NextResponse.json({ resource: toResource({ ...existing, ...set }) });
+  }
 
   const ids = body.order;
   if (!Array.isArray(ids) || ids.some((v) => typeof v !== "string")) {

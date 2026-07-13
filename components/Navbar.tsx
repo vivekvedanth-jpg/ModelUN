@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "./AuthProvider";
 import { isAdmin, displayName } from "@/lib/auth";
-import { MenuIcon, CloseIcon, UploadIcon } from "./icons";
+import { MenuIcon, CloseIcon, UploadIcon, SearchIcon } from "./icons";
 import LogoMark from "./LogoMark";
 
 /** Links every signed-in (normal) user sees. */
@@ -129,6 +129,14 @@ export default function Navbar() {
 
         {/* Desktop auth controls */}
         <div className="hidden items-center gap-3 xl:flex">
+          <Link
+            href="/search"
+            title="Search"
+            aria-label="Search"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-navy-100 bg-white text-navy-700 transition-colors hover:border-navy-300 hover:bg-navy-50"
+          >
+            <SearchIcon width={18} height={18} />
+          </Link>
           {user ? (
             <>
               {isAdmin(user.role) && (
@@ -208,6 +216,13 @@ export default function Navbar() {
                 {l.label}
               </Link>
             ))}
+            <Link
+              href="/search"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-navy-700 hover:bg-navy-100"
+            >
+              <SearchIcon width={16} height={16} /> Search
+            </Link>
 
             <div className="mt-3 flex flex-col gap-2 border-t border-navy-100 pt-4">
               {user ? (

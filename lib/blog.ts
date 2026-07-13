@@ -1,5 +1,7 @@
 /** Client wrapper for the blog API. Reading is public; writing is gated. */
 
+export type CommentPolicy = "off" | "signed-in" | "anyone";
+
 export interface BlogPost {
   id: string;
   slug: string;
@@ -15,6 +17,7 @@ export interface BlogPost {
   createdAt: number;
   updatedAt: number;
   publishedAt?: number;
+  commentPolicy?: CommentPolicy;
 }
 
 export interface BlogInput {
@@ -24,6 +27,15 @@ export interface BlogInput {
   tag?: string;
   coverImage?: string;
   published?: boolean;
+  commentPolicy?: CommentPolicy;
+}
+
+export interface BlogComment {
+  id: string;
+  postId: string;
+  authorName: string;
+  body: string;
+  createdAt: number;
 }
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
@@ -67,4 +79,29 @@ export async function updatePost(
 
 export async function deletePost(id: string): Promise<void> {
   await api(`/api/blog?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/* ------------------------------- Comments ---------------------------------- */
+
+export async function getComments(postId: string): Promise<BlogComment[]> {
+  const { comments } = await api<{ comments: BlogComment[] }>(
+    `/api/blog/comments?postId=${encodeURIComponent(postId)}`
+  );
+  return comments;
+}
+
+export async function addComment(
+  postId: string,
+  body: string,
+  authorName?: string
+): Promise<BlogComment> {
+  const { comment } = await api<{ comment: BlogComment }>("/api/blog/comments", {
+    method: "POST",
+    body: JSON.stringify({ postId, body, authorName }),
+  });
+  return comment;
+}
+
+export async function deleteComment(id: string): Promise<void> {
+  await api(`/api/blog/comments?id=${encodeURIComponent(id)}`, { method: "DELETE" });
 }

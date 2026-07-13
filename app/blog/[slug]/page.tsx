@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { blogPostsCol, type BlogPostDoc } from "@/lib/server/db";
 import { Byline } from "@/components/BlogCard";
+import BlogComments from "@/components/BlogComments";
 import { ArrowRightIcon } from "@/components/icons";
 
 export const dynamic = "force-dynamic";
@@ -42,9 +43,44 @@ export default async function BlogArticlePage({
   if (!post) notFound();
 
   const date = post.publishedAt ?? post.createdAt;
+  const url = `https://letsmun.com/blog/${post.slug}`;
+
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "BlogPosting",
+        headline: post.title,
+        description: post.excerpt,
+        // Cover images are inline data URLs (not independently crawlable), so we
+        // omit the schema image rather than point at a non-image URL.
+        datePublished: new Date(date).toISOString(),
+        dateModified: new Date(post.updatedAt).toISOString(),
+        author: { "@type": "Person", name: post.authorName },
+        publisher: {
+          "@type": "Organization",
+          name: "Let's MUN",
+          logo: { "@type": "ImageObject", url: "https://letsmun.com/logo.png" },
+        },
+        mainEntityOfPage: { "@type": "WebPage", "@id": url },
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Blog", item: "https://letsmun.com/blog" },
+          { "@type": "ListItem", position: 2, name: post.title, item: url },
+        ],
+      },
+    ],
+  };
 
   return (
     <article className="pb-16">
+      <script
+        type="application/ld+json"
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       {/* Header */}
       <header className="bg-navy-radial text-white">
         <div className="container-page max-w-3xl py-14 sm:py-16">
@@ -93,6 +129,8 @@ export default async function BlogArticlePage({
           // Sanitized server-side on write (lib/server/blog-content.ts).
           dangerouslySetInnerHTML={{ __html: post.html }}
         />
+
+        <BlogComments postId={post.id} policy={post.commentPolicy ?? "signed-in"} />
 
         <div className="mt-12 border-t border-navy-100 pt-8">
           <Link href="/blog" className="btn-ghost">

@@ -76,18 +76,31 @@ const JSON_LD = {
   "@graph": [
     {
       "@type": "Organization",
+      "@id": "https://letsmun.com/#organization",
       name: "Let's MUN",
       url: "https://letsmun.com",
+      logo: "https://letsmun.com/logo.png",
       description:
         "A learning platform for student diplomats practicing Model United Nations.",
       email: "info@letsmun.com",
     },
     {
       "@type": "WebSite",
+      "@id": "https://letsmun.com/#website",
       name: "Let's MUN",
       url: "https://letsmun.com",
+      publisher: { "@id": "https://letsmun.com/#organization" },
       description:
         "Learn the art of diplomacy: public speaking, negotiation, research and resolution writing for Model United Nations.",
+      // Enables Google's sitelinks search box, wired to our /search page.
+      potentialAction: {
+        "@type": "SearchAction",
+        target: {
+          "@type": "EntryPoint",
+          urlTemplate: "https://letsmun.com/search?q={search_term_string}",
+        },
+        "query-input": "required name=search_term_string",
+      },
     },
   ],
 };
